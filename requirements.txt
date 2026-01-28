@@ -1,0 +1,13 @@
+# Eventbrite automation dependencies
+# Install with: pip install -r requirements.txt
+
+# Core dependencies
+pyairtable>=3.3
+google-genai>=1.0
+requests>=2.32
+python-dotenv>=1.0
+Pillow>=10.0
+
+# Webhook server (for Raspberry Pi deployment)
+flask>=3.0
+gunicorn>=21.0

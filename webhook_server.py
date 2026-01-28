@@ -1,0 +1,221 @@
+"""
+Webhook server for Airtable automation triggers.
+
+Listens for POST requests from Airtable and triggers the event processing pipeline.
+
+Usage:
+    python webhook_server.py                    # Run on default port 5000
+    python webhook_server.py --port 8080        # Run on custom port
+
+For production on Raspberry Pi:
+    gunicorn webhook_server:app -b 0.0.0.0:5000
+"""
+
+import argparse
+import hmac
+import hashlib
+import os
+from datetime import datetime
+from flask import Flask, request, jsonify
+
+from config import validate_config
+from airtable_client import AirtableClient
+from eventbrite_client import EventbriteClient
+from image_generator import ImageGenerator
+
+app = Flask(__name__)
+
+# Optional: Set a webhook secret for security
+# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
+WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+
+
+def verify_signature(payload: bytes, signature: str) -> bool:
+    """Verify webhook signature if secret is configured."""
+    if not WEBHOOK_SECRET:
+        return True  # No verification if no secret set
+
+    expected = hmac.new(
+        WEBHOOK_SECRET.encode(),
+        payload,
+        hashlib.sha256
+    ).hexdigest()
+
+    return hmac.compare_digest(f"sha256={expected}", signature)
+
+
+def process_record(record_id: str) -> dict:
+    """Process a single Airtable record through the pipeline."""
+    try:
+        # Initialize clients
+        airtable = AirtableClient()
+        eventbrite = EventbriteClient()
+        image_gen = ImageGenerator()
+
+        # Get the record
+        event = airtable.get_record_by_id(record_id)
+        if event is None:
+            return {"success": False, "error": f"Record not found: {record_id}"}
+
+        # Check if already processed
+        if event.status == "Eventbrite draft created":
+            return {"success": True, "message": "Already processed", "record_id": record_id}
+
+        # Validate data
+        warnings = event.validation_warnings
+        if warnings:
+            print(f"Validation warnings for {record_id}: {warnings}")
+
+        # Generate image
+        print(f"Generating image for: {event.title}")
+        image_path = image_gen.generate_event_image(event)
+
+        # Upload to Eventbrite
+        print("Uploading image to Eventbrite...")
+        logo_id = eventbrite.upload_image(image_path)
+
+        # Create draft event
+        print("Creating draft event...")
+        eb_event = eventbrite.create_draft_event(event, logo_id=logo_id)
+
+        # Update Airtable
+        airtable.mark_as_processed(event.record_id, eb_event.url)
+
+        # Clean up temp image
+        if image_path.exists():
+            image_path.unlink()
+
+        return {
+            "success": True,
+            "record_id": record_id,
+            "event_title": event.title,
+            "eventbrite_url": eb_event.url,
+            "is_virtual": event.is_virtual,
+        }
+
+    except Exception as e:
+        print(f"Error processing record {record_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "record_id": record_id}
+
+
+@app.route("/", methods=["GET"])
+def health_check():
+    """Health check endpoint."""
+    return jsonify({
+        "status": "ok",
+        "service": "eventbrite-automation",
+        "timestamp": datetime.now().isoformat(),
+    })
+
+
+@app.route("/webhook/airtable", methods=["POST"])
+def airtable_webhook():
+    """
+    Handle Airtable webhook.
+
+    Airtable automation should send a POST with JSON body:
+    {
+        "record_id": "recXXXXXX"
+    }
+
+    Or for processing all unprocessed records:
+    {
+        "action": "process_all"
+    }
+    """
+    # Verify signature if configured
+    signature = request.headers.get("X-Webhook-Signature", "")
+    if WEBHOOK_SECRET and not verify_signature(request.data, signature):
+        return jsonify({"error": "Invalid signature"}), 401
+
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+
+        # Log the incoming request
+        print(f"\n{'='*60}")
+        print(f"Webhook received at {datetime.now().isoformat()}")
+        print(f"Data: {data}")
+        print(f"{'='*60}")
+
+        # Handle different actions
+        if data.get("action") == "process_all":
+            # Process all unprocessed records
+            airtable = AirtableClient()
+            records = airtable.get_unprocessed_records()
+
+            results = []
+            for record in records:
+                result = process_record(record.record_id)
+                results.append(result)
+
+            return jsonify({
+                "success": True,
+                "processed": len(results),
+                "results": results,
+            })
+
+        elif "record_id" in data:
+            # Process specific record
+            record_id = data["record_id"]
+            result = process_record(record_id)
+
+            if result["success"]:
+                return jsonify(result), 200
+            else:
+                return jsonify(result), 500
+
+        else:
+            return jsonify({
+                "error": "Invalid request. Provide 'record_id' or 'action': 'process_all'"
+            }), 400
+
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/webhook/test", methods=["POST", "GET"])
+def test_webhook():
+    """Test endpoint to verify webhook is working."""
+    return jsonify({
+        "status": "ok",
+        "message": "Webhook endpoint is working",
+        "timestamp": datetime.now().isoformat(),
+        "method": request.method,
+    })
+
+
+def main():
+    """Run the webhook server."""
+    parser = argparse.ArgumentParser(description="Eventbrite automation webhook server")
+    parser.add_argument("--port", type=int, default=5000, help="Port to run on")
+    parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
+    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
+
+    args = parser.parse_args()
+
+    # Validate configuration
+    try:
+        validate_config()
+        print("Configuration validated successfully")
+    except ValueError as e:
+        print(f"Configuration error: {e}")
+        return
+
+    print(f"\nStarting webhook server on {args.host}:{args.port}")
+    print(f"Webhook endpoint: http://{args.host}:{args.port}/webhook/airtable")
+    print(f"Health check: http://{args.host}:{args.port}/")
+    print("\nWaiting for webhooks...\n")
+
+    app.run(host=args.host, port=args.port, debug=args.debug)
+
+
+if __name__ == "__main__":
+    main()

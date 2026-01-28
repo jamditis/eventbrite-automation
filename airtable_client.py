@@ -1,0 +1,258 @@
+"""
+Airtable API client for event automation.
+
+Handles fetching new event requests and updating records with Eventbrite URLs.
+"""
+
+from typing import Optional
+from dataclasses import dataclass
+from datetime import datetime
+
+from pyairtable import Api
+
+from config import (
+    AIRTABLE_PAT,
+    AIRTABLE_BASE_ID,
+    AIRTABLE_TABLE_ID,
+    AIRTABLE_FIELDS,
+    UNPROCESSED_STATUSES,
+    PROCESSED_STATUS,
+)
+
+
+@dataclass
+class EventRecord:
+    """Represents an event record from Airtable."""
+
+    record_id: str
+    title: str
+    brief_description: str
+    full_description: str
+    start_datetime: Optional[datetime]
+    end_datetime: Optional[datetime]
+    event_type: str  # "In-person" or "Virtual"
+    pricing: str  # "Free" or "Paid"
+    speaker_info: Optional[str] = None
+    location: Optional[str] = None
+    requester: Optional[str] = None
+    status: Optional[str] = None
+    eventbrite_status: Optional[str] = None
+
+    @property
+    def has_valid_brief_description(self) -> bool:
+        """Check if brief_description is valid (not empty, not a URL)."""
+        if not self.brief_description:
+            return False
+        # Check if it looks like a URL
+        if self.brief_description.startswith(("http://", "https://", "www.")):
+            return False
+        return True
+
+    @property
+    def has_valid_full_description(self) -> bool:
+        """Check if full_description is valid (not empty)."""
+        return bool(self.full_description and self.full_description.strip())
+
+    @property
+    def validation_warnings(self) -> list[str]:
+        """Get list of validation warnings for this record."""
+        warnings = []
+        if not self.has_valid_brief_description:
+            warnings.append("Brief description is missing or invalid (contains URL)")
+        if not self.has_valid_full_description:
+            warnings.append("Full description is missing")
+        if not self.start_datetime:
+            warnings.append("Start date/time is missing")
+        return warnings
+
+    @property
+    def is_virtual(self) -> bool:
+        """Check if event is virtual/online."""
+        if not self.event_type:
+            return False
+        return "virtual" in self.event_type.lower()
+
+    @property
+    def is_free(self) -> bool:
+        """Check if event is free."""
+        if not self.pricing:
+            return True
+        return "free" in self.pricing.lower()
+
+    @property
+    def speaker_info_html(self) -> Optional[str]:
+        """Format speaker information for HTML display."""
+        if not self.speaker_info:
+            return None
+        # Return as-is since it's already a combined field
+        return self.speaker_info.replace("\n", "<br>")
+
+
+class AirtableClient:
+    """Client for interacting with Airtable event request table."""
+
+    def __init__(self):
+        self.api = Api(AIRTABLE_PAT)
+        self.table = self.api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID)
+
+    def get_all_records(self) -> list[dict]:
+        """Fetch all records without any filtering (for debugging)."""
+        return self.table.all()
+
+    def get_table_fields(self) -> list[str]:
+        """
+        Get all field names from the first record in the table.
+
+        Useful for debugging field name mismatches.
+        """
+        records = self.table.all(max_records=1)
+        if records:
+            return list(records[0]["fields"].keys())
+        return []
+
+    def get_unprocessed_records(self) -> list[EventRecord]:
+        """
+        Fetch all records that haven't been processed yet.
+
+        Returns records where Status field is blank, Todo, In progress, or Needs review.
+        """
+        status_field = AIRTABLE_FIELDS.get("status")
+
+        try:
+            if status_field:
+                # Build OR formula for all unprocessed statuses
+                # Handle blank/empty as a special case
+                conditions = []
+                for status in UNPROCESSED_STATUSES:
+                    if status == "":
+                        conditions.append(f"{{{status_field}}} = BLANK()")
+                        conditions.append(f"{{{status_field}}} = ''")
+                    else:
+                        conditions.append(f"{{{status_field}}} = '{status}'")
+
+                formula = f"OR({', '.join(conditions)})"
+                records = self.table.all(formula=formula)
+            else:
+                records = self.table.all()
+        except Exception as e:
+            print(f"Note: Could not filter by Status field, fetching all records")
+            print(f"      (Error: {e})")
+            records = self.table.all()
+
+        return [self._parse_record(r) for r in records]
+
+    def get_record_by_id(self, record_id: str) -> Optional[EventRecord]:
+        """Fetch a specific record by ID."""
+        try:
+            record = self.table.get(record_id)
+            return self._parse_record(record)
+        except Exception as e:
+            print(f"Error fetching record {record_id}: {e}")
+            return None
+
+    def mark_as_processed(self, record_id: str, eventbrite_url: str) -> bool:
+        """
+        Mark a record as processed by updating the Status field.
+
+        Args:
+            record_id: Airtable record ID
+            eventbrite_url: URL of the created Eventbrite draft event
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        status_field = AIRTABLE_FIELDS.get("status")
+
+        if not status_field:
+            print("Warning: No Status field configured, cannot mark as processed")
+            return False
+
+        try:
+            # Update the Status singleSelect field
+            # Note: The value must match an existing option in the singleSelect field
+            self.table.update(
+                record_id,
+                {
+                    status_field: PROCESSED_STATUS,
+                },
+            )
+            print(f"Marked record {record_id} as '{PROCESSED_STATUS}'")
+            print(f"Eventbrite URL: {eventbrite_url}")
+            return True
+        except Exception as e:
+            print(f"Error updating record {record_id}: {e}")
+            print(f"Note: Make sure '{PROCESSED_STATUS}' is a valid option in the Status field")
+            return False
+
+    def _parse_record(self, record: dict) -> EventRecord:
+        """Parse an Airtable record into an EventRecord dataclass."""
+        fields = record["fields"]
+
+        # Parse start datetime if present
+        start_datetime = None
+        datetime_str = fields.get(AIRTABLE_FIELDS["start_datetime"])
+        if datetime_str:
+            try:
+                start_datetime = datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                print(f"Warning: Could not parse start datetime: {datetime_str}")
+
+        # Parse end datetime if present
+        end_datetime = None
+        end_datetime_str = fields.get(AIRTABLE_FIELDS.get("end_datetime", ""))
+        if end_datetime_str:
+            try:
+                end_datetime = datetime.fromisoformat(end_datetime_str.replace("Z", "+00:00"))
+            except (ValueError, AttributeError):
+                print(f"Warning: Could not parse end datetime: {end_datetime_str}")
+
+        return EventRecord(
+            record_id=record["id"],
+            title=fields.get(AIRTABLE_FIELDS["title"], "Untitled Event"),
+            brief_description=fields.get(AIRTABLE_FIELDS["brief_description"], ""),
+            full_description=fields.get(AIRTABLE_FIELDS["full_description"], ""),
+            start_datetime=start_datetime,
+            end_datetime=end_datetime,
+            event_type=fields.get(AIRTABLE_FIELDS["event_type"], "In-person"),
+            pricing=fields.get(AIRTABLE_FIELDS["pricing"], "Free"),
+            speaker_info=fields.get(AIRTABLE_FIELDS.get("speaker_info", ""), None),
+            location=fields.get(AIRTABLE_FIELDS.get("location", ""), None),
+            requester=fields.get(AIRTABLE_FIELDS.get("requester", ""), None),
+            status=fields.get(AIRTABLE_FIELDS.get("status", ""), None),
+            eventbrite_status=fields.get(AIRTABLE_FIELDS.get("eventbrite_status", ""), None),
+        )
+
+
+def test_connection():
+    """Test the Airtable connection."""
+    print("Testing Airtable connection...")
+    client = AirtableClient()
+
+    # First, show available fields
+    print("\nChecking table fields...")
+    fields = client.get_table_fields()
+    if fields:
+        print(f"Available fields in table:")
+        for f in fields:
+            print(f"  - {f}")
+    else:
+        print("No records found in table (or table is empty)")
+
+    # Try to fetch records
+    print("\nFetching unprocessed records...")
+    records = client.get_unprocessed_records()
+    print(f"Found {len(records)} unprocessed records")
+
+    for record in records[:3]:  # Show first 3
+        print(f"\n  Title: {record.title}")
+        print(f"  Type: {record.event_type}")
+        print(f"  Pricing: {record.pricing}")
+        print(f"  Start: {record.start_datetime}")
+        print(f"  Virtual: {record.is_virtual}")
+        print(f"  Free: {record.is_free}")
+
+    return len(records) >= 0  # Success if no exception
+
+
+if __name__ == "__main__":
+    test_connection()
