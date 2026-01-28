@@ -192,48 +192,23 @@ class ImageGenerator:
         raise ValueError("No image returned from Gemini")
 
     def _create_fallback_image(self, title: str, output_path: Path) -> Path:
-        """Create a simple branded fallback image."""
-        from PIL import ImageDraw, ImageFont
+        """Use the default CCM branded banner image."""
+        import shutil
 
-        width = IMAGE_SETTINGS["width"]
-        height = IMAGE_SETTINGS["height"]
+        # Use the pre-made CCM default banner
+        default_banner = Path(__file__).parent / "templates" / "default-banner.png"
 
-        # Create dark background
-        canvas = Image.new("RGB", (width, height), "#1a1a1a")
-        draw = ImageDraw.Draw(canvas)
+        if default_banner.exists():
+            shutil.copy(default_banner, output_path)
+            print(f"Using CCM default banner: {output_path}")
+        else:
+            # Ultimate fallback: create a simple image
+            width = IMAGE_SETTINGS["width"]
+            height = IMAGE_SETTINGS["height"]
+            canvas = Image.new("RGB", (width, height), "#1a1a1a")
+            canvas.save(output_path, "PNG")
+            print(f"Created minimal fallback image: {output_path}")
 
-        # Add accent bar at bottom
-        accent_height = 8
-        draw.rectangle(
-            [0, height - accent_height, width, height],
-            fill=CCM_BRAND["accent_color"],
-        )
-
-        # Add title text
-        try:
-            font = ImageFont.truetype("C:/Windows/Fonts/arialbd.ttf", 72)
-        except:
-            font = ImageFont.load_default()
-
-        # Center the text
-        bbox = draw.textbbox((0, 0), title, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        x = (width - text_width) // 2
-        y = (height - text_height) // 2
-
-        draw.text((x, y), title, font=font, fill="#FFFFFF")
-
-        # Add CCM text in corner
-        try:
-            small_font = ImageFont.truetype("C:/Windows/Fonts/arial.ttf", 24)
-        except:
-            small_font = ImageFont.load_default()
-
-        draw.text((40, 40), "CENTER FOR COOPERATIVE MEDIA", font=small_font, fill="#888888")
-
-        canvas.save(output_path, "PNG")
-        print(f"Fallback image saved to: {output_path}")
         return output_path
 
 

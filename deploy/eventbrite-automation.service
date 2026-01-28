@@ -4,11 +4,11 @@ After=network.target
 
 [Service]
 Type=simple
-User=pi
-Group=pi
-WorkingDirectory=/home/pi/eventbrite-automation
-Environment="PATH=/home/pi/eventbrite-automation/venv/bin"
-ExecStart=/home/pi/eventbrite-automation/venv/bin/gunicorn webhook_server:app -b 0.0.0.0:5000 --workers 2 --timeout 120
+User=jamditis
+Group=jamditis
+WorkingDirectory=/home/jamditis/eventbrite-automation
+Environment="PATH=/home/jamditis/eventbrite-automation/venv/bin"
+ExecStart=/home/jamditis/eventbrite-automation/venv/bin/gunicorn webhook_server:app -b 0.0.0.0:5000 --workers 2 --timeout 120
 Restart=always
 RestartSec=10
 

@@ -4,61 +4,20 @@ This project automates the creation of Eventbrite draft listings from Airtable f
 
 ---
 
-## Handoff note (2026-01-28)
+## Deployment status (2026-01-28)
 
-### What's done
+**Fully deployed and operational on Raspberry Pi (houseofjawn)**
 
-- All code pushed to GitHub: https://github.com/jamditis/eventbrite-automation
-- Deployment files created in `deploy/` folder (setup.sh, systemd services, README)
-- GitHub Pages documentation site created in `docs/` folder
-- GitHub Pages URL: https://jamditis.github.io/eventbrite-automation/ (enable in repo settings if not live)
-
-### What's left to do on the Raspberry Pi
-
-**1. Clone and run setup script:**
-```bash
-cd /home/pi
-git clone https://github.com/jamditis/eventbrite-automation.git
-cd eventbrite-automation
-chmod +x deploy/setup.sh
-./deploy/setup.sh
-```
-
-**2. Create .env file with credentials (copy from local .env):**
-```bash
-nano .env
-# Paste the contents from your Windows .env file
-```
-
-**3. Start the webhook service:**
-```bash
-sudo systemctl enable eventbrite-automation
-sudo systemctl start eventbrite-automation
-```
-
-**4. Install and configure ngrok:**
-```bash
-sudo apt update && sudo apt install ngrok
-ngrok config add-authtoken YOUR_NGROK_TOKEN
-ngrok http 5000
-```
-
-**5. Create Airtable automation:**
-- Go to: https://airtable.com/appKaCDow7qGjhcOm
-- Automations → Create automation
-- Trigger: "When record matches conditions" (Status is empty OR "Todo")
-- Action: "Send webhook" POST to `https://YOUR_NGROK_URL/webhook/airtable`
-- Body: `{"record_id": "{RECORD_ID()}"}`
-
-**6. Test the flow:**
-- Create a test event in Airtable
-- Watch Pi logs: `journalctl -u eventbrite-automation -f`
-- Verify draft appears in Eventbrite
-
-### Pi network info
-
-- WiFi: 192.168.1.89
-- Tailscale: 100.122.208.15
+| Component | Status | Details |
+|-----------|--------|---------|
+| Webhook endpoint | ✅ | `https://eventbrite.amditis.tech/webhook/airtable` |
+| Gemini AI images | ✅ | Generates custom banners via `gemini-3-pro-image-preview` |
+| Fallback image | ✅ | CCM default banner at `templates/default-banner.png` |
+| Eventbrite organizer | ✅ | Center for Cooperative Media (ID: 5988913981) |
+| Markdown → HTML | ✅ | Converts `**bold**`, `*italic*`, `[links](url)`, bullet lists |
+| Airtable automation | ✅ | Script-based trigger on Status = "Todo" |
+| Systemd service | ✅ | `eventbrite-automation.service` with auto-restart |
+| Cloudflare Tunnel | ✅ | Public URL via existing `houseofjawn` tunnel |
 
 ---
 
@@ -66,8 +25,7 @@ ngrok http 5000
 
 ```bash
 # Activate virtual environment
-# Windows: venv\Scripts\activate
-# Linux/Pi: source venv/bin/activate
+source venv/bin/activate
 
 # Process all unprocessed records
 python main.py
@@ -81,17 +39,26 @@ python main.py --dry-run
 # Test API connections
 python main.py --test
 
-# Run webhook server (for Raspberry Pi deployment)
+# Run webhook server locally
 python webhook_server.py --port 5000
 ```
 
 ## Architecture
 
 ```
-Airtable Form → Airtable Record → Webhook → Raspberry Pi → Gemini (image) → Eventbrite Draft
-                     ↓                                                              ↓
-              Airtable Automation                                          Update Airtable Status
-              (sends webhook)
+Airtable Record (Status: Todo)
+        ↓
+Airtable Automation (Script action)
+        ↓
+POST to eventbrite.amditis.tech/webhook/airtable
+        ↓
+Pi: Gemini generates banner image
+        ↓
+Pi: Upload image to Eventbrite
+        ↓
+Pi: Create draft event with description
+        ↓
+Pi: Update Airtable status → "Eventbrite draft created"
 ```
 
 ## Key files
@@ -99,94 +66,108 @@ Airtable Form → Airtable Record → Webhook → Raspberry Pi → Gemini (image
 | File | Purpose |
 |------|---------|
 | `main.py` | CLI entry point - orchestrates the full pipeline |
-| `webhook_server.py` | Flask server for Airtable webhook triggers |
-| `config.py` | Configuration constants, field mappings, API keys |
+| `webhook_server.py` | Flask/gunicorn server for Airtable webhook triggers |
+| `config.py` | Configuration constants, field mappings, organizer ID |
 | `airtable_client.py` | Fetches records, filters by status, marks as processed |
-| `eventbrite_client.py` | Uploads images, creates drafts, adds descriptions/tickets |
-| `image_generator.py` | Generates complete banner images via Gemini AI |
+| `eventbrite_client.py` | Uploads images, creates drafts, markdown→HTML conversion |
+| `image_generator.py` | Generates banners via Gemini AI, fallback to CCM default |
+| `templates/default-banner.png` | CCM fallback banner image (2160x1080) |
 | `deploy/` | Deployment files for Raspberry Pi |
 
-## How it works
+## Service management
 
-1. Fetches unprocessed records from Airtable (Status: blank, Todo, In progress, or Needs review)
-2. Generates a featured image using Gemini 3.0 AI with event title and subtitle
-3. Uploads the image to Eventbrite via their 3-step S3 upload process
-4. Creates a draft event on Eventbrite with description and tickets
-5. Updates the Airtable record status to "Eventbrite draft created"
+```bash
+# Check status
+sudo systemctl status eventbrite-automation
+
+# View logs
+tail -f /var/log/eventbrite-automation/webhook.log
+
+# Restart service
+sudo systemctl restart eventbrite-automation
+
+# Manual trigger (all unprocessed)
+curl -X POST https://eventbrite.amditis.tech/webhook/airtable \
+  -H "Content-Type: application/json" \
+  -d '{"action": "process_all"}'
+```
+
+## Airtable automation setup
+
+The automation uses a **Script action** (not webhook) for better control:
+
+**Trigger:** When record matches conditions → Status equals "Todo"
+
+**Action:** Run a script with this code:
+```javascript
+let recordId = input.config().recordId;
+
+await fetch('https://eventbrite.amditis.tech/webhook/airtable', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({record_id: recordId})
+});
+
+output.set('status', 'sent');
+```
+
+**Input variable:** Add `recordId` mapped to "Record ID" from trigger.
 
 ## Important technical details
 
-### Airtable
+### Eventbrite organizer profile
 
-- Uses pyairtable library
-- Filters by Status field using OR formula
-- Field mappings are in `config.py` under `AIRTABLE_FIELDS`
+Events are created under the **Center for Cooperative Media** organizer profile (ID: 5988913981), not the Rutgers/RIIPL one (ID: 9325601432). This is configured in `config.py` as `EVENTBRITE_ORGANIZER_ID`.
 
-### Eventbrite
+### Markdown to HTML conversion
 
-- Image upload is a 3-step process (get token → upload to S3 → notify completion)
-- GET request for upload token must NOT include Content-Type header
-- Description is added via POST to `/events/{event_id}/` (not structured_content endpoint)
+The `eventbrite_client.py` converts markdown formatting to HTML for Eventbrite:
+- `**bold**` → `<strong>bold</strong>`
+- `*italic*` or `_italic_` → `<em>italic</em>`
+- `[text](url)` → `<a href="url">text</a>`
+- Bullet lists → `<ul><li>...</li></ul>`
 
 ### Gemini image generation
 
 - Model: `gemini-3-pro-image-preview`
-- Returns raw bytes (not base64)
-- Generates complete 2048x1024 banner with title + subtitle text
-- No CCM branding in image (handled by Eventbrite listing itself)
+- Generates complete 2048x1024 banners with title + subtitle
+- Falls back to `templates/default-banner.png` if Gemini fails
+- API key should be base64 encoded when sharing to avoid Google's automated revocation
+
+### Eventbrite image upload
+
+Three-step process:
+1. GET upload token (no Content-Type header)
+2. POST image to S3 with token
+3. Notify Eventbrite of completion
+
+## Credentials
+
+All credentials in `.env` file (not committed):
+- `AIRTABLE_PAT` - Airtable personal access token
+- `AIRTABLE_BASE_ID` - appKaCDow7qGjhcOm
+- `AIRTABLE_TABLE_ID` - tbliKx6zccSxC2qA4
+- `GEMINI_API_KEY` - Google Gemini API key
+- `EVENTBRITE_PRIVATE_TOKEN` - Eventbrite private token
 
 ## Status field values
 
 - **Unprocessed:** blank, "Todo", "In progress", "Needs review"
 - **After processing:** "Eventbrite draft created"
 
-## Dependencies
-
-- pyairtable - Airtable API client
-- google-genai - Gemini AI for image generation
-- requests - HTTP requests for Eventbrite API
-- python-dotenv - Environment variable management
-- Pillow - Image processing and resizing
-
-## Credentials
-
-All credentials are stored in `.env` file:
-- `AIRTABLE_PAT` - Airtable personal access token
-- `AIRTABLE_BASE_ID` - Airtable base ID
-- `AIRTABLE_TABLE_ID` - Airtable table ID
-- `GEMINI_API_KEY` - Google Gemini API key
-- `EVENTBRITE_PRIVATE_TOKEN` - Eventbrite private token
-
 ## Common issues
 
-**Airtable 403 error:** PAT doesn't have access to the base. Generate new PAT with correct base permissions.
+**Gemini 401 UNAUTHENTICATED:** API key was revoked (Google scans for exposed keys). Generate new key and base64 encode before sharing.
 
-**Gemini image errors:** Falls back to simple branded image with title text centered on dark background.
+**Eventbrite past date error:** "Start and end dates must be in the future" - test records have old dates.
 
-**Eventbrite upload fails:** Check that auth header is correct and image file exists.
+**Wrong organizer showing:** Check `EVENTBRITE_ORGANIZER_ID` in config.py is set to 5988913981.
 
-## Webhook server (Raspberry Pi)
-
-The webhook server listens for POST requests from Airtable automations and triggers the pipeline.
-
-**Endpoints:**
-- `GET /` - Health check
-- `POST /webhook/airtable` - Main webhook endpoint
-- `POST /webhook/test` - Test endpoint
-
-**Airtable webhook payload:**
-```json
-{"record_id": "recXXXXXX"}
-```
-
-**Or process all unprocessed:**
-```json
-{"action": "process_all"}
-```
+**Markdown not converting:** Ensure `_markdown_to_html()` is being called in `_build_description_html()`.
 
 ## Manual steps for virtual events
 
-Virtual events require manual addition of Zoom link to Online Event Page:
+Virtual events require manual addition of Zoom link:
 1. Go to Eventbrite dashboard → Edit event → Online event page
 2. Click "Add Zoom" or "Link another provider"
 3. Add: https://us06web.zoom.us/j/85076176419

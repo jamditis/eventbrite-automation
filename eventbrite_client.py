@@ -14,6 +14,7 @@ import requests
 from config import (
     EVENTBRITE_PRIVATE_TOKEN,
     EVENTBRITE_API_BASE,
+    EVENTBRITE_ORGANIZER_ID,
     EVENT_DEFAULTS,
 )
 from airtable_client import EventRecord
@@ -186,6 +187,7 @@ class EventbriteClient:
                 "currency": EVENT_DEFAULTS["currency"],
                 "online_event": event.is_virtual,
                 "listed": False,  # Keep as draft
+                "organizer_id": EVENTBRITE_ORGANIZER_ID,  # Use CCM profile, not Rutgers
             }
         }
 
@@ -314,25 +316,48 @@ class EventbriteClient:
             else:
                 print(f"  Note: Could not add structured content (Overview section may need manual entry)")
 
+    def _markdown_to_html(self, text: str) -> str:
+        """Convert markdown formatting to HTML for Eventbrite.
+
+        Handles:
+        - **bold** → <strong>bold</strong>
+        - *italic* → <em>italic</em>
+        - [link](url) → <a href="url">link</a>
+        """
+        import re
+
+        # Bold: **text** → <strong>text</strong>
+        text = re.sub(r'\*\*(.+?)\*\*', r'<strong>\1</strong>', text)
+
+        # Italic: *text* or _text_ → <em>text</em>
+        # Handle both asterisk and underscore style italics
+        text = re.sub(r'(?<!\*)\*([^\*\n]+?)\*(?!\*)', r'<em>\1</em>', text)
+        text = re.sub(r'(?<!_)_([^_\n]+?)_(?!_)', r'<em>\1</em>', text)
+
+        # Links: [text](url) → <a href="url">text</a>
+        text = re.sub(r'\[([^\]]+)\]\(([^\)]+)\)', r'<a href="\2">\1</a>', text)
+
+        return text
+
     def _build_description_html(self, event: EventRecord) -> str:
         """Build formatted description HTML using CCM template style."""
         parts = []
 
         # About this event section
         if event.full_description:
-            # Clean up the description text
-            desc_text = event.full_description.strip()
+            # Clean up the description text and convert markdown to HTML
+            desc_text = self._markdown_to_html(event.full_description.strip())
             # Convert newlines to HTML paragraphs
             paragraphs = desc_text.split("\n\n")
             for p in paragraphs:
                 p = p.strip()
                 if p:
                     # Handle bullet points
-                    if p.startswith("* ") or p.startswith("- "):
+                    if p.startswith("- ") or p.lstrip().startswith("- "):
                         lines = p.split("\n")
                         parts.append("<ul>")
                         for line in lines:
-                            line = line.strip().lstrip("*- ")
+                            line = line.strip().lstrip("- ")
                             if line:
                                 parts.append(f"<li>{line}</li>")
                         parts.append("</ul>")
@@ -366,8 +391,9 @@ class EventbriteClient:
         if event.speaker_info:
             parts.append("<hr>")
             parts.append("<h3>About our speakers</h3>")
-            # Convert newlines to proper HTML
-            speaker_html = event.speaker_info.replace("\n\n", "</p><p>").replace("\n", "<br>")
+            # Convert markdown and newlines to proper HTML
+            speaker_html = self._markdown_to_html(event.speaker_info)
+            speaker_html = speaker_html.replace("\n\n", "</p><p>").replace("\n", "<br>")
             parts.append(f"<p>{speaker_html}</p>")
 
         # Footer

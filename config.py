@@ -27,6 +27,8 @@ GEMINI_MODEL = "gemini-3-pro-image-preview"
 # Eventbrite configuration
 EVENTBRITE_PRIVATE_TOKEN = os.getenv("EVENTBRITE_PRIVATE_TOKEN")
 EVENTBRITE_API_BASE = "https://www.eventbriteapi.com/v3"
+# CCM organizer profile ID (not the Rutgers/RIIPL one)
+EVENTBRITE_ORGANIZER_ID = "5988913981"
 
 # CCM brand settings
 CCM_BRAND = {
