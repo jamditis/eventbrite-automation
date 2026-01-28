@@ -2,6 +2,66 @@
 
 This project automates the creation of Eventbrite draft listings from Airtable form submissions, with AI-generated featured images.
 
+---
+
+## Handoff note (2026-01-28)
+
+### What's done
+
+- All code pushed to GitHub: https://github.com/jamditis/eventbrite-automation
+- Deployment files created in `deploy/` folder (setup.sh, systemd services, README)
+- GitHub Pages documentation site created in `docs/` folder
+- GitHub Pages URL: https://jamditis.github.io/eventbrite-automation/ (enable in repo settings if not live)
+
+### What's left to do on the Raspberry Pi
+
+**1. Clone and run setup script:**
+```bash
+cd /home/pi
+git clone https://github.com/jamditis/eventbrite-automation.git
+cd eventbrite-automation
+chmod +x deploy/setup.sh
+./deploy/setup.sh
+```
+
+**2. Create .env file with credentials (copy from local .env):**
+```bash
+nano .env
+# Paste the contents from your Windows .env file
+```
+
+**3. Start the webhook service:**
+```bash
+sudo systemctl enable eventbrite-automation
+sudo systemctl start eventbrite-automation
+```
+
+**4. Install and configure ngrok:**
+```bash
+sudo apt update && sudo apt install ngrok
+ngrok config add-authtoken YOUR_NGROK_TOKEN
+ngrok http 5000
+```
+
+**5. Create Airtable automation:**
+- Go to: https://airtable.com/appKaCDow7qGjhcOm
+- Automations → Create automation
+- Trigger: "When record matches conditions" (Status is empty OR "Todo")
+- Action: "Send webhook" POST to `https://YOUR_NGROK_URL/webhook/airtable`
+- Body: `{"record_id": "{RECORD_ID()}"}`
+
+**6. Test the flow:**
+- Create a test event in Airtable
+- Watch Pi logs: `journalctl -u eventbrite-automation -f`
+- Verify draft appears in Eventbrite
+
+### Pi network info
+
+- WiFi: 192.168.1.89
+- Tailscale: 100.122.208.15
+
+---
+
 ## Quick start
 
 ```bash
