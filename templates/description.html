@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Event Description Template</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+        }
+        h2, h3 {
+            color: #000;
+        }
+        .speaker-section {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #eee;
+        }
+        .speaker-name {
+            font-weight: bold;
+            font-size: 1.1em;
+        }
+        .speaker-title {
+            color: #666;
+            font-style: italic;
+        }
+        .ccm-footer {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 2px solid #CA3553;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body>
+    <!--
+    Template variables (Jinja2 syntax):
+    - {{ title }} - Event title
+    - {{ full_description }} - Full event description
+    - {{ speaker_name }} - Speaker's name
+    - {{ speaker_title }} - Speaker's title
+    - {{ speaker_org }} - Speaker's organization
+    - {{ speaker_bio }} - Speaker's bio
+    - {{ event_type }} - "In-person" or "Virtual"
+    - {{ is_free }} - Boolean for free/paid
+    -->
+
+    <div class="event-description">
+        {{ full_description }}
+    </div>
+
+    {% if speaker_name %}
+    <div class="speaker-section">
+        <h3>About the speaker</h3>
+        <p>
+            <span class="speaker-name">{{ speaker_name }}</span>
+            {% if speaker_title and speaker_org %}
+            <br><span class="speaker-title">{{ speaker_title }}, {{ speaker_org }}</span>
+            {% elif speaker_title %}
+            <br><span class="speaker-title">{{ speaker_title }}</span>
+            {% elif speaker_org %}
+            <br><span class="speaker-title">{{ speaker_org }}</span>
+            {% endif %}
+        </p>
+        {% if speaker_bio %}
+        <p>{{ speaker_bio }}</p>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="ccm-footer">
+        <p>
+            <strong>Presented by the Center for Cooperative Media</strong><br>
+            The Center for Cooperative Media is a grant-funded program within the School of
+            Communication and Media at Montclair State University. Our mission is to grow
+            and strengthen local journalism in New Jersey and beyond.
+        </p>
+        <p>
+            <a href="https://centerforcooperativemedia.org">centerforcooperativemedia.org</a>
+        </p>
+    </div>
+</body>
+</html>
