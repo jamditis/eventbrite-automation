@@ -1,0 +1,13 @@
+[Unit]
+Description=ngrok tunnel for Eventbrite Automation
+After=network.target eventbrite-automation.service
+
+[Service]
+Type=simple
+User=pi
+ExecStart=/usr/local/bin/ngrok http 5000 --log=stdout
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

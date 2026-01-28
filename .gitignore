@@ -1,7 +1,8 @@
 # Environment and credentials
 .env
-*.env
 .env.*
+!.env.example
+!*/.env.example
 
 # Python
 __pycache__/
