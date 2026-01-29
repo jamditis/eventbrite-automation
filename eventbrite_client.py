@@ -339,14 +339,54 @@ class EventbriteClient:
 
         return text
 
+    def _strip_internal_notes(self, text: str) -> str:
+        """Remove internal planning notes that shouldn't appear in public listings.
+
+        Strips lines like:
+        - Target audience: [internal] ...
+        - The goal: [internal] ...
+        - Any line containing [internal]
+        """
+        import re
+
+        if not text:
+            return text
+
+        lines = text.split("\n")
+        cleaned_lines = []
+
+        for line in lines:
+            # Skip lines containing [internal] marker
+            if "[internal]" in line.lower():
+                continue
+            # Skip common internal planning prefixes (case-insensitive)
+            line_lower = line.lower().strip()
+            if any(line_lower.startswith(prefix) for prefix in [
+                "target audience:",
+                "the goal:",
+                "internal note:",
+                "internal:",
+                "note to self:",
+                "[internal",
+            ]):
+                continue
+            cleaned_lines.append(line)
+
+        # Remove excess blank lines that may result from stripping
+        result = "\n".join(cleaned_lines)
+        # Collapse multiple newlines into double newlines (paragraph breaks)
+        result = re.sub(r'\n{3,}', '\n\n', result)
+        return result.strip()
+
     def _build_description_html(self, event: EventRecord) -> str:
         """Build formatted description HTML using CCM template style."""
         parts = []
 
         # About this event section
         if event.full_description:
-            # Clean up the description text and convert markdown to HTML
-            desc_text = self._markdown_to_html(event.full_description.strip())
+            # Strip internal notes first, then clean up and convert markdown to HTML
+            desc_text = self._strip_internal_notes(event.full_description)
+            desc_text = self._markdown_to_html(desc_text.strip())
             # Convert newlines to HTML paragraphs
             paragraphs = desc_text.split("\n\n")
             for p in paragraphs:
@@ -391,8 +431,9 @@ class EventbriteClient:
         if event.speaker_info:
             parts.append("<hr>")
             parts.append("<h3>About our speakers</h3>")
-            # Convert markdown and newlines to proper HTML
-            speaker_html = self._markdown_to_html(event.speaker_info)
+            # Strip internal notes, then convert markdown and newlines to proper HTML
+            speaker_text = self._strip_internal_notes(event.speaker_info)
+            speaker_html = self._markdown_to_html(speaker_text)
             speaker_html = speaker_html.replace("\n\n", "</p><p>").replace("\n", "<br>")
             parts.append(f"<p>{speaker_html}</p>")
 
