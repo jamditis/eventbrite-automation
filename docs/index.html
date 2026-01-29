@@ -483,83 +483,203 @@
         </div>
 
         <p class="fields-intro">
-            Most fields are straightforward event details. The image customization fields are optional — only use them if you want to guide the AI toward a specific look.
+            Fill in the event details and the system handles the rest. Image customization fields are optional — only use them if you want to guide the AI toward a specific look.
         </p>
 
         <div class="fields-group">
-            <h3 class="fields-group-title">Event details</h3>
+            <h3 class="fields-group-title">Basic event information</h3>
 
             <div class="field-item">
                 <div class="field-name">Title of event</div>
                 <div>
-                    <div class="field-desc">The name of your event. Keep it clear and descriptive.</div>
-                    <div class="field-example">Example: "How journalism collaboratives can diversify funding"</div>
+                    <div class="field-desc">The name of your event as it will appear on Eventbrite. Keep it clear, descriptive, and in sentence case (not Title Case).</div>
+                    <div class="field-example">✓ "How journalism collaboratives can diversify funding sources"</div>
+                    <div class="field-example">✓ "2026 NJ local news awards ceremony"</div>
+                    <div class="field-example">✗ "How Journalism Collaboratives Can Diversify Funding Sources"</div>
                 </div>
             </div>
 
             <div class="field-item">
-                <div class="field-name">Brief description</div>
+                <div class="field-name">Brief description <span class="optional-badge">Max 140 chars</span></div>
                 <div>
-                    <div class="field-desc">A short tagline (max 140 characters). This appears as the event summary.</div>
-                    <div class="field-example">Example: "Learn practical strategies for sustainable funding through grassroots donors."</div>
+                    <div class="field-desc">A short, compelling tagline that appears as the event summary on Eventbrite. Think of it as a hook to get people interested.</div>
+                    <div class="field-example">✓ "Learn practical strategies for sustainable funding through grassroots donor campaigns."</div>
+                    <div class="field-example">✓ "Join us to celebrate excellence in local journalism across New Jersey."</div>
+                    <div class="field-example">✗ "This is an event about funding." (too vague)</div>
                 </div>
             </div>
 
             <div class="field-item">
                 <div class="field-name">Full description</div>
                 <div>
-                    <div class="field-desc">The complete event description. Include goals, topics covered, and takeaways. You can add internal notes here — just put "[internal]" on any line you don't want to appear publicly.</div>
-                    <div class="field-example">Example: "Target audience: [internal] Collaborative managers" — this line won't appear on Eventbrite.</div>
+                    <div class="field-desc">The complete event description that appears on the Eventbrite page. Include: what attendees will learn, who should attend, speaker info, and any logistics. Supports basic formatting like **bold** and bullet points.</div>
+                    <div class="field-example">Pro tip: Add "[internal]" to any line you want to keep private:</div>
+                    <div class="field-example">"Target audience: [internal] Collaborative managers and project leads" — this won't appear publicly.</div>
                 </div>
             </div>
 
             <div class="field-item">
-                <div class="field-name">Start date/time</div>
+                <div class="field-name">Who is requesting the event?</div>
                 <div>
-                    <div class="field-desc">When the event starts. Make sure this is in the future — Eventbrite won't accept past dates.</div>
-                </div>
-            </div>
-
-            <div class="field-item">
-                <div class="field-name">Event type</div>
-                <div>
-                    <div class="field-desc">Virtual or in-person. Virtual events will need a Zoom link added manually after the draft is created.</div>
+                    <div class="field-desc">Your name or the name of the person/team organizing this event. Helps us know who to follow up with.</div>
+                    <div class="field-example">Example: "Sarah Chen" or "Collaborative Support Team"</div>
                 </div>
             </div>
         </div>
 
         <div class="fields-group">
-            <h3 class="fields-group-title">Image customization <span class="optional-badge">Optional</span></h3>
+            <h3 class="fields-group-title">Date, time, and format</h3>
+
+            <div class="field-item">
+                <div class="field-name">Proposed start date/time</div>
+                <div>
+                    <div class="field-desc">When the event begins. Enter in Eastern time. Must be a future date — Eventbrite won't accept past dates.</div>
+                    <div class="field-example">Example: February 15, 2026 at 12:00 PM EST</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">Proposed end date/time</div>
+                <div>
+                    <div class="field-desc">When the event ends. If left blank, the system assumes 2 hours after the start time.</div>
+                    <div class="field-example">Example: February 15, 2026 at 1:30 PM EST</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">Free or paid event?</div>
+                <div>
+                    <div class="field-desc">Whether the event is free to attend or requires a ticket purchase.</div>
+                    <div class="field-example">Options: "Free" or "Ticket purchase required"</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">Single event or part of a series?</div>
+                <div>
+                    <div class="field-desc">Whether this is a standalone event or part of a recurring series.</div>
+                    <div class="field-example">Options: "One time event" or "Part of a recurring series of events"</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">Virtual or in-person?</div>
+                <div>
+                    <div class="field-desc">How the event will be held. Virtual events need a Zoom link added manually after the Eventbrite draft is created.</div>
+                    <div class="field-example">Options: "In-person" or "Virtual"</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="fields-group">
+            <h3 class="fields-group-title">Event logistics</h3>
+
+            <div class="field-item">
+                <div class="field-name">Associated costs</div>
+                <div>
+                    <div class="field-desc">Any costs involved in producing the event: speaker stipends, room rental, catering, etc. Be as detailed as possible.</div>
+                    <div class="field-example">Example: "Speaker stipend: $200, Catering for 30 people: ~$500, Room rental: $0 (using CCM space)"</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">Tech support needed</div>
+                <div>
+                    <div class="field-desc">What technical assistance you need — AV setup, Zoom moderation, recording, livestreaming, etc.</div>
+                    <div class="field-example">Example: "Need Zoom setup with breakout rooms, recording, and live captioning"</div>
+                    <div class="field-example">Example: "In-person AV: projector, microphone, and laptop connection"</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">Materials needed</div>
+                <div>
+                    <div class="field-desc">What promotional or event materials need to be designed — social graphics, slides, handouts, name tags, etc.</div>
+                    <div class="field-example">Example: "Social media graphics (Instagram square + Twitter banner), event slide deck template"</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">When do you need materials?</div>
+                <div>
+                    <div class="field-desc">Deadline for having the event materials ready. Give enough lead time for design and revisions.</div>
+                    <div class="field-example">Example: February 1, 2026 (two weeks before event)</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">Upload images <span class="optional-badge">Optional</span></div>
+                <div>
+                    <div class="field-desc">Upload any photos, logos, or graphics you want incorporated into the event image. If you provide an image, we may use it instead of AI generation.</div>
+                    <div class="field-example">Recommended size: 1920×1080 pixels (16:9 aspect ratio)</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">What else should Joe know?</div>
+                <div>
+                    <div class="field-desc">Anything else relevant to planning this event — special considerations, context, related projects, etc.</div>
+                    <div class="field-example">Example: "This is a follow-up to our January workshop. Same audience, many repeat attendees expected."</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="fields-group">
+            <h3 class="fields-group-title">Speaker information <span class="optional-badge">Optional</span></h3>
+
+            <div class="field-item">
+                <div class="field-name">Speaker names and info</div>
+                <div>
+                    <div class="field-desc">Names, titles, and brief bios of your speakers. This appears in the "About our speakers" section on Eventbrite.</div>
+                    <div class="field-example">Example: "**Jane Smith** is the executive director of the New Jersey News Commons and has 15 years of experience in local journalism."</div>
+                    <div class="field-example">Example: "**Dr. Michael Torres**, Associate Professor of Media Studies at Rutgers University, specializes in nonprofit news sustainability."</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="fields-group">
+            <h3 class="fields-group-title">Image customization <span class="optional-badge">All optional</span></h3>
 
             <div class="field-item">
                 <div class="field-name">Art style</div>
                 <div>
-                    <div class="field-desc">Describe the visual style you want. Leave blank for the default modern editorial style.</div>
-                    <div class="field-example">Examples: "minimalist" · "watercolor" · "bold geometric" · "retro poster" · "hand-drawn sketch"</div>
+                    <div class="field-desc">Describe the visual style you want for the banner image. Leave blank for the default modern editorial style.</div>
+                    <div class="field-example">"minimalist" — clean lines, lots of white space, simple shapes</div>
+                    <div class="field-example">"watercolor" — soft, painted look with flowing colors</div>
+                    <div class="field-example">"bold geometric" — strong shapes, high contrast, modern feel</div>
+                    <div class="field-example">"retro poster" — vintage aesthetic, classic typography</div>
+                    <div class="field-example">"illustrated editorial" — like a magazine illustration</div>
+                    <div class="field-example">"abstract" — non-representational shapes and colors</div>
                 </div>
             </div>
 
             <div class="field-item">
                 <div class="field-name">Image prompt</div>
                 <div>
-                    <div class="field-desc">Additional guidance for the AI. Suggest specific imagery, themes, or visual elements related to your event topic.</div>
-                    <div class="field-example">Example: "Include imagery of community newspapers and local landmarks"</div>
+                    <div class="field-desc">Additional guidance for the AI image generator. Describe specific imagery, themes, or visual elements you want included.</div>
+                    <div class="field-example">"Include imagery of community newspapers and local storefronts"</div>
+                    <div class="field-example">"Show people collaborating around a table with laptops"</div>
+                    <div class="field-example">"Use visual metaphors related to funding and growth, like seeds or building blocks"</div>
+                    <div class="field-example">"Feature microphones and recording equipment for a podcast theme"</div>
                 </div>
             </div>
 
             <div class="field-item">
                 <div class="field-name">Primary color</div>
                 <div>
-                    <div class="field-desc">The main color for the banner. Use a hex code or color name.</div>
-                    <div class="field-example">Examples: "#2E86AB" · "navy blue" · "forest green" · "coral"</div>
+                    <div class="field-desc">The main color for the banner. Accepts hex codes or color names. This will be the dominant color in the design.</div>
+                    <div class="field-example">"#2E86AB" · "navy blue" · "forest green" · "coral" · "burgundy"</div>
+                    <div class="field-example">"#1a1a1a" for a dark/black theme</div>
+                    <div class="field-example">"warm terracotta" or "dusty rose" for specific tones</div>
                 </div>
             </div>
 
             <div class="field-item">
                 <div class="field-name">Secondary color</div>
                 <div>
-                    <div class="field-desc">An accent color for highlights and secondary elements.</div>
-                    <div class="field-example">Examples: "#38E6CF" · "gold" · "burnt orange"</div>
+                    <div class="field-desc">An accent color used for highlights and secondary elements. Should complement the primary color.</div>
+                    <div class="field-example">"#38E6CF" (CCM teal) · "gold" · "burnt orange" · "soft pink"</div>
+                    <div class="field-example">Tip: Use contrasting colors for more visual impact</div>
                 </div>
             </div>
         </div>
