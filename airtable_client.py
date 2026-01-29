@@ -206,6 +206,31 @@ class AirtableClient:
             print(f"Note: Make sure '{PROCESSED_STATUS}' is a valid option in the Status field")
             return False
 
+    def update_status(self, record_id: str, new_status: str) -> bool:
+        """
+        Update just the Status field of a record.
+
+        Args:
+            record_id: Airtable record ID
+            new_status: New status value to set
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        status_field = AIRTABLE_FIELDS.get("status")
+
+        if not status_field:
+            print("Warning: No Status field configured")
+            return False
+
+        try:
+            self.table.update(record_id, {status_field: new_status})
+            print(f"Updated record {record_id} status to '{new_status}'")
+            return True
+        except Exception as e:
+            print(f"Error updating status for {record_id}: {e}")
+            return False
+
     def _parse_record(self, record: dict) -> EventRecord:
         """Parse an Airtable record into an EventRecord dataclass."""
         fields = record["fields"]

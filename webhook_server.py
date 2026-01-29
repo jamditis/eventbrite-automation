@@ -19,7 +19,7 @@ import threading
 from datetime import datetime
 from flask import Flask, request, jsonify
 
-from config import validate_config
+from config import validate_config, REGENERATE_STATUS, PROCESSED_STATUS
 from airtable_client import AirtableClient
 from eventbrite_client import EventbriteClient
 from image_generator import ImageGenerator
@@ -61,8 +61,13 @@ def process_record(record_id: str) -> dict:
         if event is None:
             return {"success": False, "error": f"Record not found: {record_id}"}
 
+        # Check if this is a regenerate request
+        if event.status == REGENERATE_STATUS:
+            print(f"Regenerate status detected for {record_id}, routing to image regeneration...")
+            return regenerate_image_for_record(record_id)
+
         # Check if already processed
-        if event.status == "Eventbrite draft created":
+        if event.status == PROCESSED_STATUS:
             return {"success": True, "message": "Already processed", "record_id": record_id}
 
         # Validate data
@@ -282,6 +287,10 @@ def regenerate_image_for_record(record_id: str) -> dict:
             image_path.unlink()
 
         if success:
+            # Reset status back to "Eventbrite draft created"
+            airtable.update_status(record_id, PROCESSED_STATUS)
+            print(f"Status reset to '{PROCESSED_STATUS}'")
+
             return {
                 "success": True,
                 "record_id": record_id,

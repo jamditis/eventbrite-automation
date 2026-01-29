@@ -319,6 +319,7 @@ All credentials in `.env` file (not committed):
 
 - **Unprocessed:** blank, "Todo", "In progress", "Needs review"
 - **After processing:** "Eventbrite draft created"
+- **Regenerate image:** Set to "Regenerate image" to trigger a new AI image generation. Status automatically resets to "Eventbrite draft created" when complete.
 
 ## Common issues
 

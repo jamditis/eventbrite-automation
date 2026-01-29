@@ -115,6 +115,9 @@ UNPROCESSED_STATUSES = ["", "Todo", "In progress", "Needs review"]
 # Status value to set after Eventbrite draft is created
 PROCESSED_STATUS = "Eventbrite draft created"
 
+# Status value that triggers image regeneration
+REGENERATE_STATUS = "Regenerate image"
+
 # Image prompt template for generating the main visual element
 VISUAL_PROMPT_TEMPLATE = """Create a clean, modern illustration or graphic for an event about: "{title}"
 
