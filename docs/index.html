@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Eventbrite automation — Center for Cooperative Media</title>
-    <meta name="description" content="Automatically create Eventbrite draft listings from Airtable form submissions with AI-generated images.">
+    <meta name="description" content="How to use the automated Eventbrite listing system for CCM events.">
 
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -28,7 +28,6 @@
             --font-mono: 'JetBrains Mono', monospace;
 
             --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
-            --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
         }
 
         *, *::before, *::after {
@@ -47,7 +46,6 @@
             background: var(--white);
             color: var(--black);
             line-height: 1.6;
-            overflow-x: hidden;
         }
 
         ::selection {
@@ -55,30 +53,16 @@
             color: var(--white);
         }
 
-        /* ============================================
-           NOISE TEXTURE OVERLAY
-        ============================================ */
-        body::before {
-            content: '';
-            position: fixed;
-            inset: 0;
-            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-            opacity: 0.03;
-            pointer-events: none;
-            z-index: 9999;
-        }
-
-        /* ============================================
-           HEADER / HERO
-        ============================================ */
+        /* HERO */
         .hero {
-            min-height: 100vh;
-            display: grid;
-            grid-template-rows: auto 1fr auto;
+            min-height: 60vh;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
             background: var(--black);
             color: var(--white);
+            padding: 4rem;
             position: relative;
-            overflow: hidden;
         }
 
         .hero::before {
@@ -90,25 +74,9 @@
             height: 80vw;
             background: radial-gradient(circle, var(--red) 0%, transparent 70%);
             opacity: 0.15;
-            animation: pulseGlow 8s ease-in-out infinite;
-        }
-
-        @keyframes pulseGlow {
-            0%, 100% { transform: scale(1); opacity: 0.15; }
-            50% { transform: scale(1.1); opacity: 0.2; }
-        }
-
-        .nav {
-            padding: 2rem 4rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            position: relative;
-            z-index: 10;
         }
 
         .logo {
-            font-family: var(--font-body);
             font-weight: 600;
             font-size: 0.875rem;
             letter-spacing: 0.05em;
@@ -116,6 +84,9 @@
             display: flex;
             align-items: center;
             gap: 0.75rem;
+            margin-bottom: 3rem;
+            position: relative;
+            z-index: 1;
         }
 
         .logo-mark {
@@ -129,47 +100,9 @@
             font-size: 0.75rem;
         }
 
-        .nav-links {
-            display: flex;
-            gap: 2.5rem;
-            list-style: none;
-        }
-
-        .nav-links a {
-            color: var(--gray-400);
-            text-decoration: none;
-            font-size: 0.875rem;
-            font-weight: 500;
-            transition: color 0.3s ease;
-            position: relative;
-        }
-
-        .nav-links a::after {
-            content: '';
-            position: absolute;
-            bottom: -4px;
-            left: 0;
-            width: 0;
-            height: 2px;
-            background: var(--red);
-            transition: width 0.3s var(--ease-out-expo);
-        }
-
-        .nav-links a:hover {
-            color: var(--white);
-        }
-
-        .nav-links a:hover::after {
-            width: 100%;
-        }
-
         .hero-content {
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            padding: 0 4rem;
             position: relative;
-            z-index: 10;
+            z-index: 1;
         }
 
         .hero-eyebrow {
@@ -178,21 +111,16 @@
             color: var(--red);
             text-transform: uppercase;
             letter-spacing: 0.2em;
-            margin-bottom: 1.5rem;
-            opacity: 0;
-            animation: fadeSlideUp 0.8s var(--ease-out-expo) 0.2s forwards;
+            margin-bottom: 1rem;
         }
 
         .hero-title {
             font-family: var(--font-display);
-            font-size: clamp(3rem, 8vw, 7rem);
+            font-size: clamp(2.5rem, 6vw, 4.5rem);
             font-weight: 400;
-            line-height: 1;
-            letter-spacing: -0.02em;
-            max-width: 900px;
-            margin-bottom: 2rem;
-            opacity: 0;
-            animation: fadeSlideUp 0.8s var(--ease-out-expo) 0.4s forwards;
+            line-height: 1.1;
+            max-width: 800px;
+            margin-bottom: 1.5rem;
         }
 
         .hero-title em {
@@ -205,98 +133,15 @@
             color: var(--gray-400);
             max-width: 600px;
             line-height: 1.7;
-            opacity: 0;
-            animation: fadeSlideUp 0.8s var(--ease-out-expo) 0.6s forwards;
         }
 
-        @keyframes fadeSlideUp {
-            from {
-                opacity: 0;
-                transform: translateY(30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .hero-footer {
-            padding: 2rem 4rem;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-top: 1px solid rgba(255,255,255,0.1);
-            position: relative;
-            z-index: 10;
-        }
-
-        .scroll-hint {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            font-size: 0.75rem;
-            color: var(--gray-400);
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-        }
-
-        .scroll-line {
-            width: 60px;
-            height: 1px;
-            background: var(--gray-600);
-            position: relative;
-            overflow: hidden;
-        }
-
-        .scroll-line::after {
-            content: '';
-            position: absolute;
-            left: -100%;
-            top: 0;
-            width: 100%;
-            height: 100%;
-            background: var(--red);
-            animation: scrollPulse 2s ease-in-out infinite;
-        }
-
-        @keyframes scrollPulse {
-            0%, 100% { left: -100%; }
-            50% { left: 100%; }
-        }
-
-        .hero-stats {
-            display: flex;
-            gap: 3rem;
-        }
-
-        .stat {
-            text-align: right;
-        }
-
-        .stat-value {
-            font-family: var(--font-display);
-            font-size: 2rem;
-            color: var(--white);
-        }
-
-        .stat-label {
-            font-size: 0.75rem;
-            color: var(--gray-400);
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-        }
-
-        /* ============================================
-           FLOW DIAGRAM
-        ============================================ */
-        .flow-section {
-            padding: 8rem 4rem;
-            background: var(--gray-100);
-            position: relative;
+        /* SECTIONS */
+        section {
+            padding: 5rem 4rem;
         }
 
         .section-header {
-            margin-bottom: 4rem;
+            margin-bottom: 3rem;
         }
 
         .section-number {
@@ -305,1152 +150,575 @@
             color: var(--red);
             text-transform: uppercase;
             letter-spacing: 0.2em;
-            margin-bottom: 1rem;
+            margin-bottom: 0.75rem;
             display: block;
         }
 
         .section-title {
             font-family: var(--font-display);
-            font-size: clamp(2rem, 5vw, 3.5rem);
+            font-size: clamp(1.75rem, 4vw, 2.5rem);
             font-weight: 400;
-            line-height: 1.1;
+            line-height: 1.2;
             max-width: 600px;
         }
 
-        .flow-diagram {
+        /* STEPS */
+        .steps-section {
+            background: var(--gray-100);
+        }
+
+        .steps-grid {
             display: grid;
-            grid-template-columns: repeat(5, 1fr);
-            gap: 0;
-            position: relative;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
         }
 
-        .flow-step {
-            position: relative;
-            padding: 2rem;
+        .step-card {
             background: var(--white);
-            border: 1px solid var(--gray-200);
-            transition: all 0.4s var(--ease-out-expo);
-            cursor: default;
-        }
-
-        .flow-step:hover {
-            background: var(--black);
-            color: var(--white);
-            transform: translateY(-8px);
-            box-shadow: 0 20px 60px rgba(0,0,0,0.2);
-            z-index: 10;
-        }
-
-        .flow-step:hover .step-number {
-            color: var(--red);
-        }
-
-        .flow-step:hover .step-icon {
-            background: var(--red);
+            padding: 2rem;
+            border-left: 4px solid var(--red);
         }
 
         .step-number {
             font-family: var(--font-mono);
             font-size: 0.75rem;
-            color: var(--gray-400);
-            margin-bottom: 1.5rem;
-            transition: color 0.4s ease;
-        }
-
-        .step-icon {
-            width: 48px;
-            height: 48px;
-            background: var(--gray-100);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1.5rem;
-            transition: all 0.4s var(--ease-out-expo);
-        }
-
-        .step-icon svg {
-            width: 24px;
-            height: 24px;
-            stroke: currentColor;
-            stroke-width: 1.5;
-            fill: none;
+            color: var(--red);
+            margin-bottom: 1rem;
         }
 
         .step-title {
             font-weight: 600;
-            font-size: 1rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .step-desc {
-            font-size: 0.875rem;
-            color: var(--gray-600);
-            line-height: 1.6;
-        }
-
-        .flow-step:hover .step-desc {
-            color: var(--gray-400);
-        }
-
-        .flow-arrow {
-            position: absolute;
-            right: -12px;
-            top: 50%;
-            transform: translateY(-50%);
-            width: 24px;
-            height: 24px;
-            background: var(--red);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 5;
-        }
-
-        .flow-arrow svg {
-            width: 12px;
-            height: 12px;
-            stroke: var(--white);
-            stroke-width: 2;
-            fill: none;
-        }
-
-        .flow-step:last-child .flow-arrow {
-            display: none;
-        }
-
-        /* ============================================
-           SETUP GUIDE
-        ============================================ */
-        .setup-section {
-            padding: 8rem 4rem;
-            background: var(--white);
-        }
-
-        .accordion {
-            max-width: 900px;
-            margin-top: 3rem;
-        }
-
-        .accordion-item {
-            border-bottom: 1px solid var(--gray-200);
-        }
-
-        .accordion-header {
-            width: 100%;
-            background: none;
-            border: none;
-            padding: 2rem 0;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            cursor: pointer;
-            text-align: left;
-            font-family: var(--font-body);
-        }
-
-        .accordion-title {
-            display: flex;
-            align-items: center;
-            gap: 1.5rem;
-        }
-
-        .accordion-number {
-            font-family: var(--font-mono);
-            font-size: 0.875rem;
-            color: var(--red);
-            width: 40px;
-        }
-
-        .accordion-label {
-            font-size: 1.25rem;
-            font-weight: 500;
-            transition: color 0.3s ease;
-        }
-
-        .accordion-header:hover .accordion-label {
-            color: var(--red);
-        }
-
-        .accordion-icon {
-            width: 40px;
-            height: 40px;
-            border: 1px solid var(--gray-200);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.4s var(--ease-out-expo);
-        }
-
-        .accordion-icon svg {
-            width: 16px;
-            height: 16px;
-            stroke: var(--black);
-            stroke-width: 2;
-            fill: none;
-            transition: transform 0.4s var(--ease-out-expo);
-        }
-
-        .accordion-item.active .accordion-icon {
-            background: var(--black);
-            border-color: var(--black);
-        }
-
-        .accordion-item.active .accordion-icon svg {
-            stroke: var(--white);
-            transform: rotate(45deg);
-        }
-
-        .accordion-content {
-            max-height: 0;
-            overflow: hidden;
-            transition: max-height 0.5s var(--ease-out-expo);
-        }
-
-        .accordion-item.active .accordion-content {
-            max-height: 2000px;
-        }
-
-        .accordion-inner {
-            padding: 0 0 2rem 3.5rem;
-        }
-
-        .accordion-inner p {
-            color: var(--gray-600);
-            margin-bottom: 1.5rem;
-            line-height: 1.7;
-        }
-
-        .code-block {
-            background: var(--gray-800);
-            color: var(--gray-100);
-            padding: 1.5rem;
-            font-family: var(--font-mono);
-            font-size: 0.875rem;
-            line-height: 1.8;
-            overflow-x: auto;
-            position: relative;
-            margin: 1rem 0;
-        }
-
-        .code-block::before {
-            content: attr(data-lang);
-            position: absolute;
-            top: 0.75rem;
-            right: 0.75rem;
-            font-size: 0.625rem;
-            color: var(--gray-400);
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-        }
-
-        .code-block code {
-            font-family: inherit;
-        }
-
-        .code-comment {
-            color: var(--gray-400);
-        }
-
-        .code-string {
-            color: #98c379;
-        }
-
-        .code-keyword {
-            color: #c678dd;
-        }
-
-        .env-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 1.5rem 0;
-        }
-
-        .env-table th,
-        .env-table td {
-            padding: 1rem;
-            text-align: left;
-            border-bottom: 1px solid var(--gray-200);
-        }
-
-        .env-table th {
-            font-weight: 600;
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            color: var(--gray-600);
-        }
-
-        .env-table td:first-child {
-            font-family: var(--font-mono);
-            font-size: 0.875rem;
-            color: var(--red);
-        }
-
-        /* ============================================
-           API ENDPOINTS
-        ============================================ */
-        .api-section {
-            padding: 8rem 4rem;
-            background: var(--black);
-            color: var(--white);
-        }
-
-        .api-section .section-title {
-            color: var(--white);
-        }
-
-        .api-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-            gap: 2rem;
-            margin-top: 4rem;
-        }
-
-        .api-card {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid rgba(255,255,255,0.1);
-            padding: 2rem;
-            transition: all 0.4s var(--ease-out-expo);
-        }
-
-        .api-card:hover {
-            background: rgba(255,255,255,0.06);
-            border-color: var(--red);
-            transform: translateY(-4px);
-        }
-
-        .api-method {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 1rem;
-        }
-
-        .method-badge {
-            font-family: var(--font-mono);
-            font-size: 0.75rem;
-            font-weight: 500;
-            padding: 0.25rem 0.5rem;
-            text-transform: uppercase;
-        }
-
-        .method-badge.get {
-            background: #22c55e;
-            color: var(--black);
-        }
-
-        .method-badge.post {
-            background: #3b82f6;
-            color: var(--white);
-        }
-
-        .api-endpoint {
-            font-family: var(--font-mono);
-            font-size: 0.875rem;
-            color: var(--gray-400);
-        }
-
-        .api-title {
-            font-weight: 600;
             font-size: 1.125rem;
-            margin-bottom: 0.5rem;
-        }
-
-        .api-desc {
-            font-size: 0.875rem;
-            color: var(--gray-400);
-            margin-bottom: 1.5rem;
-            line-height: 1.6;
-        }
-
-        .api-example {
-            background: rgba(0,0,0,0.3);
-            padding: 1rem;
-            font-family: var(--font-mono);
-            font-size: 0.75rem;
-            color: var(--gray-200);
-            overflow-x: auto;
-        }
-
-        /* ============================================
-           TROUBLESHOOTING
-        ============================================ */
-        .troubleshoot-section {
-            padding: 8rem 4rem;
-            background: var(--gray-100);
-        }
-
-        .troubleshoot-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-            margin-top: 4rem;
-        }
-
-        .troubleshoot-card {
-            background: var(--white);
-            padding: 2rem;
-            border-left: 4px solid var(--red);
-            transition: transform 0.3s var(--ease-out-expo);
-        }
-
-        .troubleshoot-card:hover {
-            transform: translateX(8px);
-        }
-
-        .troubleshoot-icon {
-            width: 40px;
-            height: 40px;
-            background: var(--gray-100);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 1rem;
-        }
-
-        .troubleshoot-icon svg {
-            width: 20px;
-            height: 20px;
-            stroke: var(--red);
-            stroke-width: 1.5;
-            fill: none;
-        }
-
-        .troubleshoot-title {
-            font-weight: 600;
             margin-bottom: 0.75rem;
         }
 
-        .troubleshoot-desc {
-            font-size: 0.875rem;
+        .step-desc {
             color: var(--gray-600);
             line-height: 1.7;
         }
 
-        .troubleshoot-desc code {
-            background: var(--gray-100);
-            padding: 0.125rem 0.375rem;
-            font-family: var(--font-mono);
-            font-size: 0.8125rem;
+        /* FIELDS TABLE */
+        .fields-section {
+            background: var(--white);
         }
 
-        /* ============================================
-           FOOTER
-        ============================================ */
-        .footer {
-            padding: 4rem;
+        .fields-intro {
+            max-width: 700px;
+            color: var(--gray-600);
+            margin-bottom: 2rem;
+            line-height: 1.7;
+        }
+
+        .fields-group {
+            margin-bottom: 3rem;
+        }
+
+        .fields-group-title {
+            font-weight: 600;
+            font-size: 1.125rem;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid var(--gray-200);
+        }
+
+        .field-item {
+            display: grid;
+            grid-template-columns: 200px 1fr;
+            gap: 1.5rem;
+            padding: 1.25rem 0;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .field-name {
+            font-weight: 500;
+        }
+
+        .field-desc {
+            color: var(--gray-600);
+        }
+
+        .field-example {
+            font-family: var(--font-mono);
+            font-size: 0.875rem;
+            color: var(--red);
+            margin-top: 0.5rem;
+        }
+
+        .optional-badge {
+            display: inline-block;
+            font-size: 0.625rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            background: var(--gray-200);
+            color: var(--gray-600);
+            padding: 0.125rem 0.5rem;
+            margin-left: 0.5rem;
+            vertical-align: middle;
+        }
+
+        /* IMAGE SECTION */
+        .image-section {
             background: var(--black);
             color: var(--white);
         }
 
-        .footer-content {
-            display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            padding-bottom: 3rem;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            margin-bottom: 2rem;
+        .image-section .section-title {
+            color: var(--white);
         }
 
-        .footer-brand {
-            max-width: 400px;
+        .image-tips {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 2rem;
+            margin-top: 2rem;
         }
 
-        .footer-logo {
-            font-family: var(--font-body);
+        .tip-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 1.5rem;
+        }
+
+        .tip-title {
             font-weight: 600;
-            font-size: 1rem;
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
+            margin-bottom: 0.5rem;
         }
 
-        .footer-desc {
-            font-size: 0.875rem;
+        .tip-desc {
             color: var(--gray-400);
+            font-size: 0.9375rem;
             line-height: 1.7;
         }
 
-        .footer-links {
+        /* AFTER SUBMISSION */
+        .after-section {
+            background: var(--gray-100);
+        }
+
+        .checklist {
+            max-width: 700px;
+        }
+
+        .checklist-item {
             display: flex;
-            gap: 4rem;
+            gap: 1rem;
+            padding: 1.25rem 0;
+            border-bottom: 1px solid var(--gray-200);
         }
 
-        .footer-column h4 {
-            font-size: 0.75rem;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            color: var(--gray-400);
-            margin-bottom: 1rem;
-        }
-
-        .footer-column ul {
-            list-style: none;
-        }
-
-        .footer-column a {
+        .checklist-icon {
+            width: 24px;
+            height: 24px;
+            background: var(--red);
             color: var(--white);
-            text-decoration: none;
-            font-size: 0.875rem;
-            display: block;
-            padding: 0.375rem 0;
-            transition: color 0.3s ease;
-        }
-
-        .footer-column a:hover {
-            color: var(--red);
-        }
-
-        .footer-bottom {
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
             font-size: 0.75rem;
-            color: var(--gray-400);
         }
 
-        .footer-bottom a {
+        .checklist-text {
+            color: var(--gray-600);
+            line-height: 1.7;
+        }
+
+        .checklist-text strong {
+            color: var(--black);
+        }
+
+        /* REGENERATE */
+        .regenerate-section {
+            background: var(--white);
+        }
+
+        .regenerate-steps {
+            max-width: 700px;
+            counter-reset: regen-step;
+        }
+
+        .regen-step {
+            display: flex;
+            gap: 1.5rem;
+            padding: 1.5rem 0;
+            border-bottom: 1px solid var(--gray-200);
+        }
+
+        .regen-step::before {
+            counter-increment: regen-step;
+            content: counter(regen-step);
+            width: 32px;
+            height: 32px;
+            background: var(--gray-100);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 0.875rem;
+            flex-shrink: 0;
+        }
+
+        .regen-content {
+            flex: 1;
+        }
+
+        .regen-title {
+            font-weight: 600;
+            margin-bottom: 0.25rem;
+        }
+
+        .regen-desc {
+            color: var(--gray-600);
+        }
+
+        /* TROUBLESHOOTING */
+        .trouble-section {
+            background: var(--gray-100);
+        }
+
+        .trouble-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .trouble-card {
+            background: var(--white);
+            padding: 1.5rem;
+            border-left: 4px solid var(--red);
+        }
+
+        .trouble-q {
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .trouble-a {
+            color: var(--gray-600);
+            font-size: 0.9375rem;
+            line-height: 1.7;
+        }
+
+        /* FOOTER */
+        .footer {
+            padding: 3rem 4rem;
+            background: var(--black);
+            color: var(--white);
+            text-align: center;
+        }
+
+        .footer p {
+            color: var(--gray-400);
+            font-size: 0.875rem;
+        }
+
+        .footer a {
             color: var(--red);
             text-decoration: none;
         }
 
-        /* ============================================
-           RESPONSIVE
-        ============================================ */
-        @media (max-width: 1024px) {
-            .flow-diagram {
-                grid-template-columns: 1fr;
-            }
-
-            .flow-arrow {
-                right: 50%;
-                top: auto;
-                bottom: -12px;
-                transform: translateX(50%) rotate(90deg);
-            }
-
-            .hero-footer {
-                flex-direction: column;
-                gap: 2rem;
-                align-items: flex-start;
-            }
-
-            .hero-stats {
-                width: 100%;
-                justify-content: space-between;
-            }
-
-            .stat {
-                text-align: left;
-            }
-        }
-
+        /* RESPONSIVE */
         @media (max-width: 768px) {
-            .nav {
-                padding: 1.5rem 2rem;
-            }
-
-            .nav-links {
-                display: none;
-            }
-
-            .hero-content,
-            .hero-footer,
-            .flow-section,
-            .setup-section,
-            .api-section,
-            .troubleshoot-section,
-            .footer {
+            .hero, section, .footer {
                 padding-left: 2rem;
                 padding-right: 2rem;
             }
 
-            .accordion-inner {
-                padding-left: 0;
-            }
-
-            .footer-content {
-                flex-direction: column;
-                gap: 3rem;
-            }
-
-            .footer-links {
-                flex-wrap: wrap;
-                gap: 2rem;
-            }
-
-            .footer-bottom {
-                flex-direction: column;
-                gap: 1rem;
-                text-align: center;
+            .field-item {
+                grid-template-columns: 1fr;
+                gap: 0.5rem;
             }
         }
-
-        /* ============================================
-           SCROLL ANIMATIONS
-        ============================================ */
-        .reveal {
-            opacity: 0;
-            transform: translateY(40px);
-            transition: all 0.8s var(--ease-out-expo);
-        }
-
-        .reveal.visible {
-            opacity: 1;
-            transform: translateY(0);
-        }
-
-        .reveal-delay-1 { transition-delay: 0.1s; }
-        .reveal-delay-2 { transition-delay: 0.2s; }
-        .reveal-delay-3 { transition-delay: 0.3s; }
-        .reveal-delay-4 { transition-delay: 0.4s; }
-        .reveal-delay-5 { transition-delay: 0.5s; }
     </style>
 </head>
 <body>
     <!-- HERO -->
-    <section class="hero">
-        <nav class="nav">
-            <div class="logo">
-                <div class="logo-mark">CCM</div>
-                <span>Eventbrite automation</span>
-            </div>
-            <ul class="nav-links">
-                <li><a href="#overview">Overview</a></li>
-                <li><a href="#flow">How it works</a></li>
-                <li><a href="#setup">Setup</a></li>
-                <li><a href="#api">API</a></li>
-                <li><a href="#troubleshoot">Troubleshoot</a></li>
-            </ul>
-        </nav>
-
+    <header class="hero">
+        <div class="logo">
+            <div class="logo-mark">CCM</div>
+            <span>Eventbrite automation</span>
+        </div>
         <div class="hero-content">
-            <span class="hero-eyebrow">Center for Cooperative Media</span>
-            <h1 class="hero-title">From form to <em>event</em> in seconds</h1>
+            <span class="hero-eyebrow">User guide</span>
+            <h1 class="hero-title">Creating Eventbrite listings <em>automatically</em></h1>
             <p class="hero-subtitle">
-                Automatically create Eventbrite draft listings from Airtable submissions.
-                AI generates the promotional images. You just review and publish.
+                Fill out the event request form in Airtable, and the system creates a draft Eventbrite listing for you — complete with an AI-generated promotional image.
             </p>
         </div>
+    </header>
 
-        <div class="hero-footer">
-            <div class="scroll-hint">
-                <div class="scroll-line"></div>
-                <span>Scroll to explore</span>
-            </div>
-            <div class="hero-stats">
-                <div class="stat">
-                    <div class="stat-value">5</div>
-                    <div class="stat-label">Automated steps</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-value">~2min</div>
-                    <div class="stat-label">Per event</div>
-                </div>
-                <div class="stat">
-                    <div class="stat-value">24/7</div>
-                    <div class="stat-label">Always running</div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <!-- FLOW DIAGRAM -->
-    <section class="flow-section" id="flow">
-        <div class="section-header reveal">
+    <!-- HOW IT WORKS -->
+    <section class="steps-section">
+        <div class="section-header">
             <span class="section-number">01 — How it works</span>
-            <h2 class="section-title">Five steps from submission to draft</h2>
+            <h2 class="section-title">The short version</h2>
         </div>
 
-        <div class="flow-diagram">
-            <div class="flow-step reveal reveal-delay-1">
-                <span class="step-number">01</span>
-                <div class="step-icon">
-                    <svg viewBox="0 0 24 24"><path d="M9 11H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-6a2 2 0 0 0-2-2zm0 0V9a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2m-6 0h6m4 0h4a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-4a2 2 0 0 1-2-2v-6a2 2 0 0 1 2-2z"/></svg>
-                </div>
-                <h3 class="step-title">Form submitted</h3>
-                <p class="step-desc">Someone fills out the Airtable event request form with all event details.</p>
-                <div class="flow-arrow">
-                    <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                </div>
+        <div class="steps-grid">
+            <div class="step-card">
+                <span class="step-number">Step 1</span>
+                <h3 class="step-title">Fill out the form</h3>
+                <p class="step-desc">Submit an event request through our Airtable form with all the event details.</p>
             </div>
 
-            <div class="flow-step reveal reveal-delay-2">
-                <span class="step-number">02</span>
-                <div class="step-icon">
-                    <svg viewBox="0 0 24 24"><path d="M13 10V3L4 14h7v7l9-11h-7z"/></svg>
-                </div>
-                <h3 class="step-title">Webhook triggered</h3>
-                <p class="step-desc">Airtable automation detects the new record and sends a webhook to our server.</p>
-                <div class="flow-arrow">
-                    <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                </div>
+            <div class="step-card">
+                <span class="step-number">Step 2</span>
+                <h3 class="step-title">Wait about 2 minutes</h3>
+                <p class="step-desc">The system automatically creates an AI-generated banner image and sets up the Eventbrite listing.</p>
             </div>
 
-            <div class="flow-step reveal reveal-delay-3">
-                <span class="step-number">03</span>
-                <div class="step-icon">
-                    <svg viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 0 1 2.828 0L16 16m-2-2l1.586-1.586a2 2 0 0 1 2.828 0L20 14m-6-6h.01M6 20h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/></svg>
-                </div>
-                <h3 class="step-title">Image generated</h3>
-                <p class="step-desc">Gemini AI creates a professional 2048×1024 banner image with event title.</p>
-                <div class="flow-arrow">
-                    <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                </div>
-            </div>
-
-            <div class="flow-step reveal reveal-delay-4">
-                <span class="step-number">04</span>
-                <div class="step-icon">
-                    <svg viewBox="0 0 24 24"><path d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/></svg>
-                </div>
-                <h3 class="step-title">Draft created</h3>
-                <p class="step-desc">Full Eventbrite listing created with image, description, tickets, and venue.</p>
-                <div class="flow-arrow">
-                    <svg viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-                </div>
-            </div>
-
-            <div class="flow-step reveal reveal-delay-5">
-                <span class="step-number">05</span>
-                <div class="step-icon">
-                    <svg viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
-                </div>
-                <h3 class="step-title">Status updated</h3>
-                <p class="step-desc">Airtable record marked as processed. Draft ready for review in Eventbrite.</p>
+            <div class="step-card">
+                <span class="step-number">Step 3</span>
+                <h3 class="step-title">Review the draft</h3>
+                <p class="step-desc">Check the draft in Eventbrite, add the Zoom link for virtual events, and publish when ready.</p>
             </div>
         </div>
     </section>
 
-    <!-- SETUP GUIDE -->
-    <section class="setup-section" id="setup">
-        <div class="section-header reveal">
-            <span class="section-number">02 — Setup guide</span>
-            <h2 class="section-title">Deploy to Raspberry Pi</h2>
+    <!-- FORM FIELDS -->
+    <section class="fields-section">
+        <div class="section-header">
+            <span class="section-number">02 — Form fields</span>
+            <h2 class="section-title">What to fill in</h2>
         </div>
 
-        <div class="accordion">
-            <div class="accordion-item">
-                <button class="accordion-header">
-                    <div class="accordion-title">
-                        <span class="accordion-number">01</span>
-                        <span class="accordion-label">Clone the repository</span>
-                    </div>
-                    <div class="accordion-icon">
-                        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-                    </div>
-                </button>
-                <div class="accordion-content">
-                    <div class="accordion-inner">
-                        <p>SSH into your Raspberry Pi and clone the repository from GitHub.</p>
-                        <div class="code-block" data-lang="bash">
-<code><span class="code-comment"># SSH to your Pi</span>
-ssh pi@raspberrypi.local
+        <p class="fields-intro">
+            Most fields are straightforward event details. The image customization fields are optional — only use them if you want to guide the AI toward a specific look.
+        </p>
 
-<span class="code-comment"># Clone the repository</span>
-cd /home/pi
-git clone https://github.com/jamditis/eventbrite-automation.git
-cd eventbrite-automation</code>
-                        </div>
-                    </div>
+        <div class="fields-group">
+            <h3 class="fields-group-title">Event details</h3>
+
+            <div class="field-item">
+                <div class="field-name">Title of event</div>
+                <div>
+                    <div class="field-desc">The name of your event. Keep it clear and descriptive.</div>
+                    <div class="field-example">Example: "How journalism collaboratives can diversify funding"</div>
                 </div>
             </div>
 
-            <div class="accordion-item">
-                <button class="accordion-header">
-                    <div class="accordion-title">
-                        <span class="accordion-number">02</span>
-                        <span class="accordion-label">Run the setup script</span>
-                    </div>
-                    <div class="accordion-icon">
-                        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-                    </div>
-                </button>
-                <div class="accordion-content">
-                    <div class="accordion-inner">
-                        <p>The setup script creates the virtual environment, installs dependencies, and configures the systemd service.</p>
-                        <div class="code-block" data-lang="bash">
-<code><span class="code-comment"># Make script executable and run</span>
-chmod +x deploy/setup.sh
-./deploy/setup.sh</code>
-                        </div>
-                    </div>
+            <div class="field-item">
+                <div class="field-name">Brief description</div>
+                <div>
+                    <div class="field-desc">A short tagline (max 140 characters). This appears as the event summary.</div>
+                    <div class="field-example">Example: "Learn practical strategies for sustainable funding through grassroots donors."</div>
                 </div>
             </div>
 
-            <div class="accordion-item">
-                <button class="accordion-header">
-                    <div class="accordion-title">
-                        <span class="accordion-number">03</span>
-                        <span class="accordion-label">Configure environment variables</span>
-                    </div>
-                    <div class="accordion-icon">
-                        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-                    </div>
-                </button>
-                <div class="accordion-content">
-                    <div class="accordion-inner">
-                        <p>Create a <code>.env</code> file with your API credentials:</p>
-                        <table class="env-table">
-                            <thead>
-                                <tr>
-                                    <th>Variable</th>
-                                    <th>Description</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td>AIRTABLE_PAT</td>
-                                    <td>Airtable Personal Access Token</td>
-                                </tr>
-                                <tr>
-                                    <td>AIRTABLE_BASE_ID</td>
-                                    <td>Base ID (starts with app...)</td>
-                                </tr>
-                                <tr>
-                                    <td>AIRTABLE_TABLE_ID</td>
-                                    <td>Table ID (starts with tbl...)</td>
-                                </tr>
-                                <tr>
-                                    <td>GEMINI_API_KEY</td>
-                                    <td>Google Gemini API key</td>
-                                </tr>
-                                <tr>
-                                    <td>EVENTBRITE_PRIVATE_TOKEN</td>
-                                    <td>Eventbrite private OAuth token</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
+            <div class="field-item">
+                <div class="field-name">Full description</div>
+                <div>
+                    <div class="field-desc">The complete event description. Include goals, topics covered, and takeaways. You can add internal notes here — just put "[internal]" on any line you don't want to appear publicly.</div>
+                    <div class="field-example">Example: "Target audience: [internal] Collaborative managers" — this line won't appear on Eventbrite.</div>
                 </div>
             </div>
 
-            <div class="accordion-item">
-                <button class="accordion-header">
-                    <div class="accordion-title">
-                        <span class="accordion-number">04</span>
-                        <span class="accordion-label">Start the service</span>
-                    </div>
-                    <div class="accordion-icon">
-                        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-                    </div>
-                </button>
-                <div class="accordion-content">
-                    <div class="accordion-inner">
-                        <p>Enable and start the webhook server as a system service:</p>
-                        <div class="code-block" data-lang="bash">
-<code><span class="code-comment"># Enable auto-start on boot</span>
-sudo systemctl enable eventbrite-automation
-
-<span class="code-comment"># Start the service</span>
-sudo systemctl start eventbrite-automation
-
-<span class="code-comment"># Check status</span>
-sudo systemctl status eventbrite-automation</code>
-                        </div>
-                    </div>
+            <div class="field-item">
+                <div class="field-name">Start date/time</div>
+                <div>
+                    <div class="field-desc">When the event starts. Make sure this is in the future — Eventbrite won't accept past dates.</div>
                 </div>
             </div>
 
-            <div class="accordion-item">
-                <button class="accordion-header">
-                    <div class="accordion-title">
-                        <span class="accordion-number">05</span>
-                        <span class="accordion-label">Set up external access with ngrok</span>
-                    </div>
-                    <div class="accordion-icon">
-                        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-                    </div>
-                </button>
-                <div class="accordion-content">
-                    <div class="accordion-inner">
-                        <p>Install ngrok to expose your local server to the internet:</p>
-                        <div class="code-block" data-lang="bash">
-<code><span class="code-comment"># Install ngrok</span>
-curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
-  sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | \
-  sudo tee /etc/apt/sources.list.d/ngrok.list
-sudo apt update && sudo apt install ngrok
+            <div class="field-item">
+                <div class="field-name">Event type</div>
+                <div>
+                    <div class="field-desc">Virtual or in-person. Virtual events will need a Zoom link added manually after the draft is created.</div>
+                </div>
+            </div>
+        </div>
 
-<span class="code-comment"># Authenticate with your ngrok token</span>
-ngrok config add-authtoken YOUR_TOKEN
+        <div class="fields-group">
+            <h3 class="fields-group-title">Image customization <span class="optional-badge">Optional</span></h3>
 
-<span class="code-comment"># Start the tunnel</span>
-ngrok http 5000</code>
-                        </div>
-                        <p>Copy the HTTPS URL and use it in your Airtable automation webhook.</p>
-                    </div>
+            <div class="field-item">
+                <div class="field-name">Art style</div>
+                <div>
+                    <div class="field-desc">Describe the visual style you want. Leave blank for the default modern editorial style.</div>
+                    <div class="field-example">Examples: "minimalist" · "watercolor" · "bold geometric" · "retro poster" · "hand-drawn sketch"</div>
                 </div>
             </div>
 
-            <div class="accordion-item">
-                <button class="accordion-header">
-                    <div class="accordion-title">
-                        <span class="accordion-number">06</span>
-                        <span class="accordion-label">Configure Airtable automation</span>
-                    </div>
-                    <div class="accordion-icon">
-                        <svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>
-                    </div>
-                </button>
-                <div class="accordion-content">
-                    <div class="accordion-inner">
-                        <p>Create an Airtable automation that triggers when a new record is created:</p>
-                        <ol style="color: var(--gray-600); margin-left: 1.5rem; margin-bottom: 1.5rem;">
-                            <li style="margin-bottom: 0.5rem;">Go to Automations → Create automation</li>
-                            <li style="margin-bottom: 0.5rem;">Trigger: "When a record matches conditions"</li>
-                            <li style="margin-bottom: 0.5rem;">Condition: Status is empty OR Status is "Todo"</li>
-                            <li style="margin-bottom: 0.5rem;">Action: "Send a webhook" with POST method</li>
-                        </ol>
-                        <div class="code-block" data-lang="json">
-<code>{
-  <span class="code-string">"record_id"</span>: <span class="code-string">"{RECORD_ID()}"</span>
-}</code>
-                        </div>
-                    </div>
+            <div class="field-item">
+                <div class="field-name">Image prompt</div>
+                <div>
+                    <div class="field-desc">Additional guidance for the AI. Suggest specific imagery, themes, or visual elements related to your event topic.</div>
+                    <div class="field-example">Example: "Include imagery of community newspapers and local landmarks"</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">Primary color</div>
+                <div>
+                    <div class="field-desc">The main color for the banner. Use a hex code or color name.</div>
+                    <div class="field-example">Examples: "#2E86AB" · "navy blue" · "forest green" · "coral"</div>
+                </div>
+            </div>
+
+            <div class="field-item">
+                <div class="field-name">Secondary color</div>
+                <div>
+                    <div class="field-desc">An accent color for highlights and secondary elements.</div>
+                    <div class="field-example">Examples: "#38E6CF" · "gold" · "burnt orange"</div>
                 </div>
             </div>
         </div>
     </section>
 
-    <!-- API ENDPOINTS -->
-    <section class="api-section" id="api">
-        <div class="section-header reveal">
-            <span class="section-number">03 — API endpoints</span>
-            <h2 class="section-title">Webhook server reference</h2>
+    <!-- IMAGE TIPS -->
+    <section class="image-section">
+        <div class="section-header">
+            <span class="section-number">03 — Image tips</span>
+            <h2 class="section-title">Getting better AI images</h2>
         </div>
 
-        <div class="api-grid">
-            <div class="api-card reveal reveal-delay-1">
-                <div class="api-method">
-                    <span class="method-badge get">GET</span>
-                    <span class="api-endpoint">/</span>
-                </div>
-                <h3 class="api-title">Health check</h3>
-                <p class="api-desc">Returns server status. Use this to verify the webhook server is running.</p>
-                <div class="api-example">
-curl http://localhost:5000/
+        <div class="image-tips">
+            <div class="tip-card">
+                <h3 class="tip-title">Be specific with art style</h3>
+                <p class="tip-desc">Instead of "nice" or "professional," try specific styles like "flat illustration," "watercolor painting," or "geometric abstract."</p>
+            </div>
+
+            <div class="tip-card">
+                <h3 class="tip-title">Describe the mood</h3>
+                <p class="tip-desc">Words like "energetic," "calm," "serious," or "playful" help guide the overall feel of the image.</p>
+            </div>
+
+            <div class="tip-card">
+                <h3 class="tip-title">Mention relevant imagery</h3>
+                <p class="tip-desc">In the image prompt, suggest visual elements related to your topic: "newspapers," "microphones," "community gathering," etc.</p>
+            </div>
+
+            <div class="tip-card">
+                <h3 class="tip-title">Colors set the tone</h3>
+                <p class="tip-desc">Warm colors (red, orange) feel energetic. Cool colors (blue, green) feel calm. Use colors that match your event's vibe.</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- AFTER SUBMISSION -->
+    <section class="after-section">
+        <div class="section-header">
+            <span class="section-number">04 — After you submit</span>
+            <h2 class="section-title">What to do next</h2>
+        </div>
+
+        <div class="checklist">
+            <div class="checklist-item">
+                <div class="checklist-icon">1</div>
+                <div class="checklist-text">
+                    <strong>Wait for the status to change.</strong> The Airtable record will update to "Eventbrite draft created" when the listing is ready. This usually takes about 2 minutes.
                 </div>
             </div>
 
-            <div class="api-card reveal reveal-delay-2">
-                <div class="api-method">
-                    <span class="method-badge post">POST</span>
-                    <span class="api-endpoint">/webhook/airtable</span>
-                </div>
-                <h3 class="api-title">Process single record</h3>
-                <p class="api-desc">Process a specific Airtable record by its ID. This is what Airtable calls.</p>
-                <div class="api-example">
-curl -X POST http://localhost:5000/webhook/airtable \
-  -H "Content-Type: application/json" \
-  -d '{"record_id": "recXXXXXXXX"}'
+            <div class="checklist-item">
+                <div class="checklist-icon">2</div>
+                <div class="checklist-text">
+                    <strong>Click the Eventbrite URL.</strong> A link will appear in the Airtable record. Click it to open the draft in Eventbrite.
                 </div>
             </div>
 
-            <div class="api-card reveal reveal-delay-3">
-                <div class="api-method">
-                    <span class="method-badge post">POST</span>
-                    <span class="api-endpoint">/webhook/airtable</span>
-                </div>
-                <h3 class="api-title">Process all unprocessed</h3>
-                <p class="api-desc">Batch process all records that haven't been processed yet.</p>
-                <div class="api-example">
-curl -X POST http://localhost:5000/webhook/airtable \
-  -H "Content-Type: application/json" \
-  -d '{"action": "process_all"}'
+            <div class="checklist-item">
+                <div class="checklist-icon">3</div>
+                <div class="checklist-text">
+                    <strong>Review everything.</strong> Check the title, description, date, time, and image. Make any edits directly in Eventbrite.
                 </div>
             </div>
 
-            <div class="api-card reveal reveal-delay-4">
-                <div class="api-method">
-                    <span class="method-badge get">GET</span>
-                    <span class="api-endpoint">/webhook/test</span>
+            <div class="checklist-item">
+                <div class="checklist-icon">4</div>
+                <div class="checklist-text">
+                    <strong>Add the Zoom link (for virtual events).</strong> Go to Edit event → Online event page → Add Zoom. Use the standard CCM Zoom: us06web.zoom.us/j/85076176419
                 </div>
-                <h3 class="api-title">Test endpoint</h3>
-                <p class="api-desc">Simple test endpoint to verify webhook connectivity without processing.</p>
-                <div class="api-example">
-curl http://localhost:5000/webhook/test
+            </div>
+
+            <div class="checklist-item">
+                <div class="checklist-icon">5</div>
+                <div class="checklist-text">
+                    <strong>Publish when ready.</strong> The listing is created as a draft. Click "Publish" in Eventbrite when you're ready to go live.
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- REGENERATE IMAGE -->
+    <section class="regenerate-section">
+        <div class="section-header">
+            <span class="section-number">05 — Don't like the image?</span>
+            <h2 class="section-title">How to regenerate it</h2>
+        </div>
+
+        <p class="fields-intro">
+            If the AI-generated image doesn't look right, you can regenerate it without creating a whole new Eventbrite listing.
+        </p>
+
+        <div class="regenerate-steps">
+            <div class="regen-step">
+                <div class="regen-content">
+                    <div class="regen-title">Update the image fields in Airtable</div>
+                    <div class="regen-desc">Go back to the Airtable record and add or change the Art style, Image prompt, or color fields. Be more specific about what you want.</div>
+                </div>
+            </div>
+
+            <div class="regen-step">
+                <div class="regen-content">
+                    <div class="regen-title">Ask Joe to regenerate</div>
+                    <div class="regen-desc">Send Joe the record ID (it looks like "recXXXXXX") and ask him to regenerate the image. He'll run a quick command that creates a new image and updates the existing Eventbrite listing.</div>
+                </div>
+            </div>
+
+            <div class="regen-step">
+                <div class="regen-content">
+                    <div class="regen-title">Check the result</div>
+                    <div class="regen-desc">Refresh the Eventbrite page to see the new image. Repeat if needed — each regeneration uses your updated field values.</div>
                 </div>
             </div>
         </div>
     </section>
 
     <!-- TROUBLESHOOTING -->
-    <section class="troubleshoot-section" id="troubleshoot">
-        <div class="section-header reveal">
-            <span class="section-number">04 — Troubleshooting</span>
-            <h2 class="section-title">Common issues and fixes</h2>
+    <section class="trouble-section">
+        <div class="section-header">
+            <span class="section-number">06 — Troubleshooting</span>
+            <h2 class="section-title">Common questions</h2>
         </div>
 
-        <div class="troubleshoot-grid">
-            <div class="troubleshoot-card reveal reveal-delay-1">
-                <div class="troubleshoot-icon">
-                    <svg viewBox="0 0 24 24"><path d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>
-                </div>
-                <h3 class="troubleshoot-title">Event didn't appear in Eventbrite</h3>
-                <p class="troubleshoot-desc">
-                    Check that the event date is in the future — Eventbrite won't create events with past dates.
-                    Also verify all required fields are filled in Airtable.
-                </p>
+        <div class="trouble-grid">
+            <div class="trouble-card">
+                <div class="trouble-q">The status never changed to "draft created"</div>
+                <div class="trouble-a">Check that your event date is in the future. Eventbrite won't create listings for past events. If the date is correct, let Joe know — there might be a system issue.</div>
             </div>
 
-            <div class="troubleshoot-card reveal reveal-delay-2">
-                <div class="troubleshoot-icon">
-                    <svg viewBox="0 0 24 24"><path d="M4 16l4.586-4.586a2 2 0 0 1 2.828 0L16 16m-2-2l1.586-1.586a2 2 0 0 1 2.828 0L20 14m-6-6h.01M6 20h12a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2z"/></svg>
-                </div>
-                <h3 class="troubleshoot-title">Image looks wrong</h3>
-                <p class="troubleshoot-desc">
-                    AI does its best, but sometimes the generated image needs a redo.
-                    You can upload a different image manually in the Eventbrite dashboard.
-                </p>
+            <div class="trouble-card">
+                <div class="trouble-q">The image has weird text or looks off</div>
+                <div class="trouble-a">AI image generation isn't perfect. You can regenerate with different settings, or just upload your own image directly in Eventbrite.</div>
             </div>
 
-            <div class="troubleshoot-card reveal reveal-delay-3">
-                <div class="troubleshoot-icon">
-                    <svg viewBox="0 0 24 24"><path d="M18.364 5.636l-3.536 3.536m0 5.656l3.536 3.536M9.172 9.172L5.636 5.636m3.536 9.192l-3.536 3.536M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/></svg>
-                </div>
-                <h3 class="troubleshoot-title">Service won't start</h3>
-                <p class="troubleshoot-desc">
-                    Run <code>journalctl -u eventbrite-automation -n 50</code> to see error logs.
-                    Common causes: missing .env file, dependencies not installed, or wrong paths.
-                </p>
+            <div class="trouble-card">
+                <div class="trouble-q">The time is showing wrong</div>
+                <div class="trouble-a">Double-check the time zone in Airtable. All times should be entered in Eastern time. The system converts everything automatically.</div>
             </div>
 
-            <div class="troubleshoot-card reveal reveal-delay-4">
-                <div class="troubleshoot-icon">
-                    <svg viewBox="0 0 24 24"><path d="M8.111 16.404a5.5 5.5 0 0 1 7.778 0M12 20h.01m-7.08-7.071c3.904-3.905 10.236-3.905 14.141 0M1.394 9.393c5.857-5.857 15.355-5.857 21.213 0"/></svg>
-                </div>
-                <h3 class="troubleshoot-title">Webhook not receiving requests</h3>
-                <p class="troubleshoot-desc">
-                    Verify ngrok tunnel is running. Check that the URL in Airtable automation matches
-                    your ngrok URL exactly. Test with <code>curl</code> from another machine.
-                </p>
+            <div class="trouble-card">
+                <div class="trouble-q">Internal notes appeared on Eventbrite</div>
+                <div class="trouble-a">Make sure your internal notes include "[internal]" somewhere in the line. That's the marker the system looks for when filtering out private content.</div>
             </div>
 
-            <div class="troubleshoot-card reveal reveal-delay-5">
-                <div class="troubleshoot-icon">
-                    <svg viewBox="0 0 24 24"><path d="M15 7a2 2 0 0 1 2 2m4 0a6 6 0 0 1-7.743 5.743L11 17H9v2H7v2H4a1 1 0 0 1-1-1v-2.586a1 1 0 0 1 .293-.707l5.964-5.964A6 6 0 1 1 21 9z"/></svg>
-                </div>
-                <h3 class="troubleshoot-title">Airtable 403 error</h3>
-                <p class="troubleshoot-desc">
-                    Your Personal Access Token doesn't have access to this base.
-                    Generate a new PAT at airtable.com/create/tokens with the correct base permissions.
-                </p>
+            <div class="trouble-card">
+                <div class="trouble-q">I need to change something after it's created</div>
+                <div class="trouble-a">Just edit directly in Eventbrite. The automation creates the draft, but you have full control to modify anything before (or after) publishing.</div>
             </div>
 
-            <div class="troubleshoot-card reveal reveal-delay-6">
-                <div class="troubleshoot-icon">
-                    <svg viewBox="0 0 24 24"><path d="M15 10l-4 4l6 6l4-16l-18 7l4 2l2 6l3-4"/></svg>
-                </div>
-                <h3 class="troubleshoot-title">Virtual events missing Zoom link</h3>
-                <p class="troubleshoot-desc">
-                    Zoom links must be added manually. Go to Eventbrite → Edit event → Online event page →
-                    Add Zoom or Link another provider.
-                </p>
+            <div class="trouble-card">
+                <div class="trouble-q">Can I upload my own image instead?</div>
+                <div class="trouble-a">Yes! In Eventbrite, go to the event → Edit → scroll to the image section → upload your own. The AI image is just a starting point.</div>
             </div>
         </div>
     </section>
 
     <!-- FOOTER -->
-    <footer class="footer" id="overview">
-        <div class="footer-content">
-            <div class="footer-brand">
-                <div class="footer-logo">
-                    <div class="logo-mark">CCM</div>
-                    <span>Center for Cooperative Media</span>
-                </div>
-                <p class="footer-desc">
-                    A grant-funded program within the College of Communication and Media at Montclair State University.
-                    Our mission is to grow and strengthen local journalism in New Jersey and beyond.
-                </p>
-            </div>
-
-            <div class="footer-links">
-                <div class="footer-column">
-                    <h4>Resources</h4>
-                    <ul>
-                        <li><a href="https://github.com/jamditis/eventbrite-automation">GitHub repository</a></li>
-                        <li><a href="https://github.com/jamditis/eventbrite-automation/tree/master/deploy">Deployment guide</a></li>
-                        <li><a href="https://airtable.com/create/tokens">Airtable tokens</a></li>
-                    </ul>
-                </div>
-                <div class="footer-column">
-                    <h4>External services</h4>
-                    <ul>
-                        <li><a href="https://www.eventbrite.com/platform/">Eventbrite API</a></li>
-                        <li><a href="https://aistudio.google.com/apikey">Gemini API</a></li>
-                        <li><a href="https://ngrok.com">ngrok</a></li>
-                    </ul>
-                </div>
-                <div class="footer-column">
-                    <h4>Contact</h4>
-                    <ul>
-                        <li><a href="mailto:amditisj@montclair.edu">amditisj@montclair.edu</a></li>
-                        <li><a href="https://centerforcooperativemedia.org">centerforcooperativemedia.org</a></li>
-                    </ul>
-                </div>
-            </div>
-        </div>
-
-        <div class="footer-bottom">
-            <span>Built with ❤️ by the CCM team</span>
-            <span>Questions? Contact <a href="mailto:amditisj@montclair.edu">Joe Amditis</a></span>
-        </div>
+    <footer class="footer">
+        <p>Questions? Contact <a href="mailto:amditisj@montclair.edu">Joe Amditis</a></p>
+        <p style="margin-top: 0.5rem;">Center for Cooperative Media · Montclair State University</p>
     </footer>
-
-    <script>
-        // Accordion functionality
-        document.querySelectorAll('.accordion-header').forEach(header => {
-            header.addEventListener('click', () => {
-                const item = header.parentElement;
-                const isActive = item.classList.contains('active');
-
-                // Close all items
-                document.querySelectorAll('.accordion-item').forEach(i => {
-                    i.classList.remove('active');
-                });
-
-                // Open clicked item if it wasn't active
-                if (!isActive) {
-                    item.classList.add('active');
-                }
-            });
-        });
-
-        // Scroll reveal animations
-        const observerOptions = {
-            root: null,
-            rootMargin: '0px',
-            threshold: 0.1
-        };
-
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.classList.add('visible');
-                }
-            });
-        }, observerOptions);
-
-        document.querySelectorAll('.reveal').forEach(el => {
-            observer.observe(el);
-        });
-
-        // Smooth scroll for nav links
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function(e) {
-                e.preventDefault();
-                const target = document.querySelector(this.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                    });
-                }
-            });
-        });
-    </script>
 </body>
 </html>
