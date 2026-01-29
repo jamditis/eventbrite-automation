@@ -37,6 +37,14 @@ class EventRecord:
     requester: Optional[str] = None
     status: Optional[str] = None
     eventbrite_status: Optional[str] = None
+    # Image generation customization
+    art_style: Optional[str] = None  # e.g., "minimalist", "watercolor", "bold geometric"
+    image_prompt: Optional[str] = None  # Additional prompt guidance
+    primary_color: Optional[str] = None  # Hex code or color name
+    secondary_color: Optional[str] = None  # Hex code or color name
+    # Eventbrite tracking
+    eventbrite_event_id: Optional[str] = None  # For updating existing events
+    eventbrite_url: Optional[str] = None  # URL of the created event
 
     @property
     def has_valid_brief_description(self) -> bool:
@@ -150,34 +158,48 @@ class AirtableClient:
             print(f"Error fetching record {record_id}: {e}")
             return None
 
-    def mark_as_processed(self, record_id: str, eventbrite_url: str) -> bool:
+    def mark_as_processed(
+        self,
+        record_id: str,
+        eventbrite_url: str,
+        eventbrite_event_id: Optional[str] = None,
+    ) -> bool:
         """
         Mark a record as processed by updating the Status field.
 
         Args:
             record_id: Airtable record ID
             eventbrite_url: URL of the created Eventbrite draft event
+            eventbrite_event_id: Eventbrite event ID (for later updates)
 
         Returns:
             True if update succeeded, False otherwise
         """
         status_field = AIRTABLE_FIELDS.get("status")
+        url_field = AIRTABLE_FIELDS.get("eventbrite_url")
+        event_id_field = AIRTABLE_FIELDS.get("eventbrite_event_id")
 
         if not status_field:
             print("Warning: No Status field configured, cannot mark as processed")
             return False
 
         try:
-            # Update the Status singleSelect field
-            # Note: The value must match an existing option in the singleSelect field
-            self.table.update(
-                record_id,
-                {
-                    status_field: PROCESSED_STATUS,
-                },
-            )
+            # Build update payload
+            update_data = {status_field: PROCESSED_STATUS}
+
+            # Add URL if field exists
+            if url_field:
+                update_data[url_field] = eventbrite_url
+
+            # Add event ID if field exists and ID provided
+            if event_id_field and eventbrite_event_id:
+                update_data[event_id_field] = eventbrite_event_id
+
+            self.table.update(record_id, update_data)
             print(f"Marked record {record_id} as '{PROCESSED_STATUS}'")
             print(f"Eventbrite URL: {eventbrite_url}")
+            if eventbrite_event_id:
+                print(f"Eventbrite event ID: {eventbrite_event_id}")
             return True
         except Exception as e:
             print(f"Error updating record {record_id}: {e}")
@@ -220,6 +242,14 @@ class AirtableClient:
             requester=fields.get(AIRTABLE_FIELDS.get("requester", ""), None),
             status=fields.get(AIRTABLE_FIELDS.get("status", ""), None),
             eventbrite_status=fields.get(AIRTABLE_FIELDS.get("eventbrite_status", ""), None),
+            # Image generation customization
+            art_style=fields.get(AIRTABLE_FIELDS.get("art_style", ""), None),
+            image_prompt=fields.get(AIRTABLE_FIELDS.get("image_prompt", ""), None),
+            primary_color=fields.get(AIRTABLE_FIELDS.get("primary_color", ""), None),
+            secondary_color=fields.get(AIRTABLE_FIELDS.get("secondary_color", ""), None),
+            # Eventbrite tracking
+            eventbrite_event_id=fields.get(AIRTABLE_FIELDS.get("eventbrite_event_id", ""), None),
+            eventbrite_url=fields.get(AIRTABLE_FIELDS.get("eventbrite_url", ""), None),
         )
 
 

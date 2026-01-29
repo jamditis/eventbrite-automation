@@ -528,6 +528,39 @@ class EventbriteClient:
             print(f"  Note: Venue creation failed: {e}")
             return None
 
+    def update_event_image(self, event_id: str, logo_id: str) -> bool:
+        """
+        Update the image/logo on an existing Eventbrite event.
+
+        Args:
+            event_id: Eventbrite event ID
+            logo_id: New logo ID from uploaded image
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        print(f"Updating image for event {event_id}...")
+
+        payload = {
+            "event": {
+                "logo_id": logo_id,
+            }
+        }
+
+        response = requests.post(
+            f"{self.base_url}/events/{event_id}/",
+            headers=self.headers,
+            json=payload,
+        )
+
+        if response.status_code == 200:
+            print(f"Image updated successfully for event {event_id}")
+            return True
+        else:
+            print(f"Failed to update image: {response.status_code}")
+            print(f"Response: {response.text}")
+            return False
+
     def _format_datetime_local(self, dt: Optional[datetime]) -> str:
         """Format datetime for Eventbrite API as local time (without Z suffix).
 

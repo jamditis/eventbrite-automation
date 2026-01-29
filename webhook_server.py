@@ -82,8 +82,8 @@ def process_record(record_id: str) -> dict:
         print("Creating draft event...")
         eb_event = eventbrite.create_draft_event(event, logo_id=logo_id)
 
-        # Update Airtable
-        airtable.mark_as_processed(event.record_id, eb_event.url)
+        # Update Airtable with event ID for future updates
+        airtable.mark_as_processed(event.record_id, eb_event.url, eb_event.event_id)
 
         # Clean up temp image
         if image_path.exists():
@@ -241,6 +241,158 @@ def check_status(record_id: str):
         return jsonify(processing_status[record_id])
     else:
         return jsonify({"status": "unknown", "message": "No processing record found"}), 404
+
+
+def regenerate_image_for_record(record_id: str) -> dict:
+    """Regenerate image for an existing Eventbrite event."""
+    try:
+        # Initialize clients
+        airtable = AirtableClient()
+        eventbrite = EventbriteClient()
+        image_gen = ImageGenerator()
+
+        # Get the record
+        event = airtable.get_record_by_id(record_id)
+        if event is None:
+            return {"success": False, "error": f"Record not found: {record_id}"}
+
+        # Check if we have an existing Eventbrite event ID
+        if not event.eventbrite_event_id:
+            return {
+                "success": False,
+                "error": "No Eventbrite event ID found. Process the record first to create an event.",
+                "record_id": record_id,
+            }
+
+        print(f"Regenerating image for: {event.title}")
+        print(f"Eventbrite event ID: {event.eventbrite_event_id}")
+
+        # Generate new image
+        image_path = image_gen.generate_event_image(event)
+
+        # Upload to Eventbrite
+        print("Uploading new image to Eventbrite...")
+        logo_id = eventbrite.upload_image(image_path)
+
+        # Update the existing event with new image
+        success = eventbrite.update_event_image(event.eventbrite_event_id, logo_id)
+
+        # Clean up temp image
+        if image_path.exists():
+            image_path.unlink()
+
+        if success:
+            return {
+                "success": True,
+                "record_id": record_id,
+                "event_title": event.title,
+                "eventbrite_event_id": event.eventbrite_event_id,
+                "message": "Image regenerated and updated successfully",
+            }
+        else:
+            return {
+                "success": False,
+                "error": "Failed to update Eventbrite event with new image",
+                "record_id": record_id,
+            }
+
+    except Exception as e:
+        print(f"Error regenerating image for {record_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        return {"success": False, "error": str(e), "record_id": record_id}
+
+
+def regenerate_image_async(record_id: str):
+    """Background worker to regenerate image and update status."""
+    processing_status[record_id] = {
+        "status": "regenerating",
+        "started": datetime.now().isoformat(),
+    }
+
+    try:
+        result = regenerate_image_for_record(record_id)
+        processing_status[record_id] = {
+            "status": "completed" if result.get("success") else "failed",
+            "result": result,
+            "completed": datetime.now().isoformat(),
+        }
+        print(f"Image regeneration completed for {record_id}: {result.get('success')}")
+    except Exception as e:
+        processing_status[record_id] = {
+            "status": "failed",
+            "error": str(e),
+            "completed": datetime.now().isoformat(),
+        }
+        print(f"Image regeneration failed for {record_id}: {e}")
+
+
+@app.route("/webhook/regenerate-image", methods=["POST"])
+def regenerate_image_webhook():
+    """
+    Regenerate the image for an existing Eventbrite event.
+
+    Request body:
+    {
+        "record_id": "recXXXXXX"
+    }
+
+    Optional:
+    {
+        "record_id": "recXXXXXX",
+        "sync": true  // Wait for completion
+    }
+
+    The record must already have an Eventbrite event ID stored.
+    This generates a new image using current Airtable field values
+    (including any art_style, image_prompt, or color customizations)
+    and updates the existing Eventbrite event.
+    """
+    try:
+        data = request.get_json()
+
+        if not data:
+            return jsonify({"error": "No JSON data provided"}), 400
+
+        if "record_id" not in data:
+            return jsonify({"error": "record_id is required"}), 400
+
+        record_id = data["record_id"]
+        sync_mode = data.get("sync", False)
+
+        print(f"\n{'='*60}")
+        print(f"Image regeneration requested at {datetime.now().isoformat()}")
+        print(f"Record ID: {record_id}")
+        print(f"{'='*60}")
+
+        if sync_mode:
+            # Synchronous processing
+            result = regenerate_image_for_record(record_id)
+            if result["success"]:
+                return jsonify(result), 200
+            else:
+                return jsonify(result), 500
+        else:
+            # Async processing
+            thread = threading.Thread(
+                target=regenerate_image_async,
+                args=(record_id,),
+                daemon=True,
+            )
+            thread.start()
+
+            return jsonify({
+                "status": "accepted",
+                "message": "Image regeneration started in background",
+                "record_id": record_id,
+                "check_status": f"/webhook/status/{record_id}",
+            }), 202
+
+    except Exception as e:
+        print(f"Regenerate image webhook error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
 
 
 @app.route("/webhook/test", methods=["POST", "GET"])

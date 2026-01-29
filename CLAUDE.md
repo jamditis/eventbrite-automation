@@ -108,6 +108,16 @@ curl https://eventbrite.amditis.tech/webhook/status/recXXX
 curl -X POST https://eventbrite.amditis.tech/webhook/airtable \
   -H "Content-Type: application/json" \
   -d '{"action": "process_all"}'
+
+# Regenerate image for existing event (async)
+curl -X POST https://eventbrite.amditis.tech/webhook/regenerate-image \
+  -H "Content-Type: application/json" \
+  -d '{"record_id": "recXXX"}'
+
+# Regenerate image (sync - waits for completion)
+curl -X POST https://eventbrite.amditis.tech/webhook/regenerate-image \
+  -H "Content-Type: application/json" \
+  -d '{"record_id": "recXXX", "sync": true}'
 ```
 
 ## Airtable automation setup
@@ -130,6 +140,35 @@ output.set('status', 'sent');
 ```
 
 **Input variable:** Add `recordId` mapped to "Record ID" from trigger.
+
+## Airtable fields
+
+### Required fields
+| Field name | Purpose |
+|-----------|---------|
+| Title of event | Event title |
+| Brief description (max 140 chars) | Eventbrite summary |
+| Full description | Event details (internal notes filtered out) |
+| Proposed start date/time | Event start |
+| Event type | Virtual or In-person |
+| Free or paid? | Pricing |
+| Status | Processing status |
+
+### Image customization fields (optional)
+| Field name | Purpose | Example values |
+|-----------|---------|----------------|
+| Art style | Style guidance for Gemini | "minimalist", "watercolor", "bold geometric", "retro poster" |
+| Image prompt | Additional prompt guidance | "Include imagery of newspapers and digital screens" |
+| Primary color | Main color for the design | "#FF5733", "navy blue", "forest green" |
+| Secondary color | Accent color | "#38E6CF", "gold", "coral" |
+
+### Eventbrite tracking fields (auto-populated)
+| Field name | Purpose |
+|-----------|---------|
+| Eventbrite event ID | For updating existing events |
+| Eventbrite URL | Link to the created event |
+
+---
 
 ## Webhook API
 
@@ -155,6 +194,34 @@ Triggers processing for a record. Returns immediately by default.
 **Options:**
 - `"sync": true` - Wait for completion (for testing)
 - `"action": "process_all"` - Process all unprocessed records (always sync)
+
+### POST /webhook/regenerate-image
+
+Regenerate the image for an existing Eventbrite event without creating a new listing.
+
+**Requirements:** The record must already have an `Eventbrite event ID` stored (from initial processing).
+
+**Request:**
+```json
+{"record_id": "recXXX"}
+```
+
+**Response (202 Accepted):**
+```json
+{
+  "status": "accepted",
+  "message": "Image regeneration started in background",
+  "record_id": "recXXX",
+  "check_status": "/webhook/status/recXXX"
+}
+```
+
+**Sync mode (for testing):**
+```json
+{"record_id": "recXXX", "sync": true}
+```
+
+This uses the current values of `Art style`, `Image prompt`, `Primary color`, and `Secondary color` fields from Airtable to generate a new image.
 
 ### GET /webhook/status/{record_id}
 

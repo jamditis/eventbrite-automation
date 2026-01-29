@@ -164,13 +164,45 @@ class ImageGenerator:
             print(f"  Warning: Could not download logo: {e}")
             return None
 
-    def _generate_complete_image(self, event: EventRecord) -> Image.Image:
-        """Generate the complete event banner using Gemini."""
+    def _build_custom_prompt(self, event: EventRecord) -> str:
+        """Build the image generation prompt with customizations from Airtable."""
+        # Start with base prompt
         prompt = IMAGE_PROMPT_TEMPLATE.format(
             title=event.title,
             brief_description=event.brief_description or "Professional journalism event",
             event_type=event.event_type or "Virtual event",
         )
+
+        customizations = []
+
+        # Add art style if specified
+        if event.art_style:
+            customizations.append(f"\nART STYLE OVERRIDE: Create this image in a {event.art_style} style.")
+
+        # Add custom colors if specified
+        if event.primary_color or event.secondary_color:
+            color_instructions = "\nCUSTOM COLOR PALETTE:"
+            if event.primary_color:
+                color_instructions += f"\n- Primary color: {event.primary_color}"
+            if event.secondary_color:
+                color_instructions += f"\n- Secondary/accent color: {event.secondary_color}"
+            color_instructions += "\nUse these colors prominently in the design instead of the default palette."
+            customizations.append(color_instructions)
+
+        # Add additional prompt guidance if specified
+        if event.image_prompt:
+            customizations.append(f"\nADDITIONAL GUIDANCE: {event.image_prompt}")
+
+        # Append customizations to the prompt
+        if customizations:
+            prompt += "\n" + "\n".join(customizations)
+            print(f"  Using custom image settings: art_style={event.art_style}, colors={event.primary_color}/{event.secondary_color}")
+
+        return prompt
+
+    def _generate_complete_image(self, event: EventRecord) -> Image.Image:
+        """Generate the complete event banner using Gemini."""
+        prompt = self._build_custom_prompt(event)
 
         print("  Generating with Gemini...")
 

@@ -99,6 +99,14 @@ AIRTABLE_FIELDS = {
     "status": "Status",
     "visibility": "Visibility",
     "requester": "Who is requesting the event?",
+    # Image generation customization fields
+    "art_style": "Art style",  # e.g., "minimalist", "watercolor", "bold geometric"
+    "image_prompt": "Image prompt",  # Additional prompt guidance for Gemini
+    "primary_color": "Primary color",  # Hex code or color name
+    "secondary_color": "Secondary color",  # Hex code or color name
+    # Eventbrite tracking
+    "eventbrite_event_id": "Eventbrite event ID",  # For updating existing events
+    "eventbrite_url": "Eventbrite URL",  # URL of the created event
 }
 
 # Status field values that indicate a record needs processing
