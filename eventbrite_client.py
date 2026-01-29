@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
+from zoneinfo import ZoneInfo
 
 import requests
 
@@ -339,6 +340,23 @@ class EventbriteClient:
 
         return text
 
+    def _to_eastern(self, dt: Optional[datetime]) -> Optional[datetime]:
+        """Convert a datetime to Eastern time.
+
+        Airtable stores datetimes in UTC, but we display them in Eastern time.
+        """
+        if dt is None:
+            return None
+
+        eastern = ZoneInfo("America/New_York")
+
+        # If datetime is timezone-aware (has tzinfo), convert it
+        if dt.tzinfo is not None:
+            return dt.astimezone(eastern)
+
+        # If naive, assume it's already Eastern (shouldn't happen with Airtable)
+        return dt.replace(tzinfo=eastern)
+
     def _strip_internal_notes(self, text: str) -> str:
         """Remove internal planning notes that shouldn't appear in public listings.
 
@@ -409,8 +427,10 @@ class EventbriteClient:
         # Event details section
         details = []
         if event.start_datetime:
-            date_str = event.start_datetime.strftime("%A, %B %d, %Y")
-            time_str = event.start_datetime.strftime("%I:%M %p").lstrip("0")
+            # Convert UTC to Eastern time for display
+            eastern_dt = self._to_eastern(event.start_datetime)
+            date_str = eastern_dt.strftime("%A, %B %d, %Y")
+            time_str = eastern_dt.strftime("%I:%M %p").lstrip("0")
             details.append(f"📅 Date: {date_str}")
             details.append(f"🕒 Time: {time_str} ET")
 
