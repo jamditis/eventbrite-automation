@@ -207,6 +207,14 @@ The `eventbrite_client.py` converts markdown formatting to HTML for Eventbrite:
 - `[text](url)` → `<a href="url">text</a>`
 - Bullet lists → `<ul><li>...</li></ul>`
 
+### Timezone handling
+
+Airtable stores all datetimes in UTC. The system converts to Eastern time (America/New_York) for:
+- Event description display (via `_to_eastern()` helper)
+- Eventbrite API (passes timezone parameter)
+
+If times appear wrong in the overview description, check that `_to_eastern()` is being called before formatting.
+
 ### Gemini image generation
 
 - Model: `gemini-3-pro-image-preview`
