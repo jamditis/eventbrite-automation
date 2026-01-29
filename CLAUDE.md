@@ -162,6 +162,16 @@ output.set('status', 'sent');
 | Primary color | Main color for the design | "#FF5733", "navy blue", "forest green" |
 | Secondary color | Accent color | "#38E6CF", "gold", "coral" |
 
+**Form helper text for these fields:**
+
+- **Art style**: Describe the visual style for the event banner image. Leave blank for the default modern/editorial style. Examples: "minimalist", "watercolor", "bold geometric", "retro poster", "illustrated editorial", "abstract shapes", "hand-drawn sketch".
+
+- **Image prompt**: Additional guidance for the AI image generator. Use this to suggest specific imagery, themes, or visual elements that relate to your event. Example: "Include imagery of community newspapers and local landmarks" or "Use visual metaphors related to investigative journalism".
+
+- **Primary color**: Main color for the event banner. Use a hex code (like #2E86AB) or a color name (like "navy blue", "forest green", "coral"). Leave blank to use the default CCM color palette.
+
+- **Secondary color**: Accent color for the event banner. Use a hex code or color name. This color will be used for highlights and secondary elements. Leave blank to use the default palette.
+
 ### Eventbrite tracking fields (auto-populated)
 | Field name | Purpose |
 |-----------|---------|
