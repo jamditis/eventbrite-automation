@@ -191,6 +191,14 @@ Check processing status for a record.
 
 Events are created under the **Center for Cooperative Media** organizer profile (ID: 5988913981), not the Rutgers/RIIPL one (ID: 9325601432). This is configured in `config.py` as `EVENTBRITE_ORGANIZER_ID`.
 
+### Internal notes filtering
+
+The system automatically strips internal planning notes from descriptions before creating Eventbrite listings. Lines are removed if they:
+- Contain `[internal]` anywhere in the line
+- Start with common planning prefixes: `Target audience:`, `The goal:`, `Internal note:`, etc.
+
+This allows Airtable records to contain planning context without it appearing publicly.
+
 ### Markdown to HTML conversion
 
 The `eventbrite_client.py` converts markdown formatting to HTML for Eventbrite:
