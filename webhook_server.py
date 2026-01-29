@@ -15,6 +15,7 @@ import argparse
 import hmac
 import hashlib
 import os
+import threading
 from datetime import datetime
 from flask import Flask, request, jsonify
 
@@ -24,6 +25,9 @@ from eventbrite_client import EventbriteClient
 from image_generator import ImageGenerator
 
 app = Flask(__name__)
+
+# Track background processing status
+processing_status = {}
 
 # Optional: Set a webhook secret for security
 # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
@@ -100,6 +104,27 @@ def process_record(record_id: str) -> dict:
         return {"success": False, "error": str(e), "record_id": record_id}
 
 
+def process_record_async(record_id: str):
+    """Background worker to process a record and update status."""
+    processing_status[record_id] = {"status": "processing", "started": datetime.now().isoformat()}
+
+    try:
+        result = process_record(record_id)
+        processing_status[record_id] = {
+            "status": "completed" if result.get("success") else "failed",
+            "result": result,
+            "completed": datetime.now().isoformat(),
+        }
+        print(f"Background processing completed for {record_id}: {result.get('success')}")
+    except Exception as e:
+        processing_status[record_id] = {
+            "status": "failed",
+            "error": str(e),
+            "completed": datetime.now().isoformat(),
+        }
+        print(f"Background processing failed for {record_id}: {e}")
+
+
 @app.route("/", methods=["GET"])
 def health_check():
     """Health check endpoint."""
@@ -115,6 +140,8 @@ def airtable_webhook():
     """
     Handle Airtable webhook.
 
+    Responds immediately with 200 and processes in background to avoid timeouts.
+
     Airtable automation should send a POST with JSON body:
     {
         "record_id": "recXXXXXX"
@@ -123,6 +150,12 @@ def airtable_webhook():
     Or for processing all unprocessed records:
     {
         "action": "process_all"
+    }
+
+    Use sync=true to wait for completion (for manual testing):
+    {
+        "record_id": "recXXXXXX",
+        "sync": true
     }
     """
     # Verify signature if configured
@@ -142,9 +175,12 @@ def airtable_webhook():
         print(f"Data: {data}")
         print(f"{'='*60}")
 
+        # Check if caller wants synchronous processing (for testing)
+        sync_mode = data.get("sync", False)
+
         # Handle different actions
         if data.get("action") == "process_all":
-            # Process all unprocessed records
+            # Process all unprocessed records (always sync for this action)
             airtable = AirtableClient()
             records = airtable.get_unprocessed_records()
 
@@ -160,14 +196,31 @@ def airtable_webhook():
             })
 
         elif "record_id" in data:
-            # Process specific record
             record_id = data["record_id"]
-            result = process_record(record_id)
 
-            if result["success"]:
-                return jsonify(result), 200
+            if sync_mode:
+                # Synchronous processing (for manual testing)
+                result = process_record(record_id)
+                if result["success"]:
+                    return jsonify(result), 200
+                else:
+                    return jsonify(result), 500
             else:
-                return jsonify(result), 500
+                # Async processing (default for Airtable webhooks)
+                # Respond immediately, process in background
+                thread = threading.Thread(
+                    target=process_record_async,
+                    args=(record_id,),
+                    daemon=True
+                )
+                thread.start()
+
+                return jsonify({
+                    "status": "accepted",
+                    "message": "Processing started in background",
+                    "record_id": record_id,
+                    "check_status": f"/webhook/status/{record_id}",
+                }), 202  # 202 Accepted
 
         else:
             return jsonify({
@@ -179,6 +232,15 @@ def airtable_webhook():
         import traceback
         traceback.print_exc()
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/webhook/status/<record_id>", methods=["GET"])
+def check_status(record_id: str):
+    """Check the processing status of a record."""
+    if record_id in processing_status:
+        return jsonify(processing_status[record_id])
+    else:
+        return jsonify({"status": "unknown", "message": "No processing record found"}), 404
 
 
 @app.route("/webhook/test", methods=["POST", "GET"])

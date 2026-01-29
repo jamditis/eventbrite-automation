@@ -4,13 +4,14 @@ This project automates the creation of Eventbrite draft listings from Airtable f
 
 ---
 
-## Deployment status (2026-01-28)
+## Deployment status (2026-01-29)
 
 **Fully deployed and operational on Raspberry Pi (houseofjawn)**
 
 | Component | Status | Details |
 |-----------|--------|---------|
 | Webhook endpoint | ✅ | `https://eventbrite.amditis.tech/webhook/airtable` |
+| Async processing | ✅ | Returns 202 immediately, processes in background thread |
 | Gemini AI images | ✅ | Generates custom banners via `gemini-3-pro-image-preview` |
 | Fallback image | ✅ | CCM default banner at `templates/default-banner.png` |
 | Eventbrite organizer | ✅ | Center for Cooperative Media (ID: 5988913981) |
@@ -52,14 +53,18 @@ Airtable Automation (Script action)
         ↓
 POST to eventbrite.amditis.tech/webhook/airtable
         ↓
-Pi: Gemini generates banner image
+Pi: Returns 202 Accepted immediately (<200ms)
         ↓
-Pi: Upload image to Eventbrite
-        ↓
-Pi: Create draft event with description
-        ↓
-Pi: Update Airtable status → "Eventbrite draft created"
+Background thread spawned:
+  → Gemini generates banner image
+  → Upload image to Eventbrite
+  → Create draft event with description
+  → Update Airtable status → "Eventbrite draft created"
 ```
+
+### Why async?
+
+Airtable scripts have a ~30 second timeout. The full pipeline (Gemini image generation + Eventbrite uploads) takes 30-45 seconds. The webhook responds immediately with `202 Accepted` and processes in a background thread to avoid timeout errors.
 
 ## Key files
 
@@ -86,7 +91,20 @@ tail -f /var/log/eventbrite-automation/webhook.log
 # Restart service
 sudo systemctl restart eventbrite-automation
 
-# Manual trigger (all unprocessed)
+# Manual trigger (async - returns immediately)
+curl -X POST https://eventbrite.amditis.tech/webhook/airtable \
+  -H "Content-Type: application/json" \
+  -d '{"record_id": "recXXX"}'
+
+# Manual trigger (sync - waits for completion, useful for testing)
+curl -X POST https://eventbrite.amditis.tech/webhook/airtable \
+  -H "Content-Type: application/json" \
+  -d '{"record_id": "recXXX", "sync": true}'
+
+# Check processing status
+curl https://eventbrite.amditis.tech/webhook/status/recXXX
+
+# Process all unprocessed records (always sync)
 curl -X POST https://eventbrite.amditis.tech/webhook/airtable \
   -H "Content-Type: application/json" \
   -d '{"action": "process_all"}'
@@ -112,6 +130,60 @@ output.set('status', 'sent');
 ```
 
 **Input variable:** Add `recordId` mapped to "Record ID" from trigger.
+
+## Webhook API
+
+### POST /webhook/airtable
+
+Triggers processing for a record. Returns immediately by default.
+
+**Request:**
+```json
+{"record_id": "recXXX"}
+```
+
+**Response (202 Accepted):**
+```json
+{
+  "status": "accepted",
+  "message": "Processing started in background",
+  "record_id": "recXXX",
+  "check_status": "/webhook/status/recXXX"
+}
+```
+
+**Options:**
+- `"sync": true` - Wait for completion (for testing)
+- `"action": "process_all"` - Process all unprocessed records (always sync)
+
+### GET /webhook/status/{record_id}
+
+Check processing status for a record.
+
+**Response (processing):**
+```json
+{"status": "processing", "started": "2026-01-29T13:03:06.555106"}
+```
+
+**Response (completed):**
+```json
+{
+  "status": "completed",
+  "result": {"success": true, "eventbrite_url": "https://..."},
+  "completed": "2026-01-29T13:03:36.675291"
+}
+```
+
+**Response (failed):**
+```json
+{
+  "status": "failed",
+  "result": {"success": false, "error": "..."},
+  "completed": "2026-01-29T13:03:36.675291"
+}
+```
+
+---
 
 ## Important technical details
 
@@ -157,6 +229,8 @@ All credentials in `.env` file (not committed):
 
 ## Common issues
 
+**Airtable REQUEST_TIMEOUT:** Fixed as of 2026-01-29. The webhook now returns `202 Accepted` immediately and processes in a background thread. If you see this error, ensure you're running the latest `webhook_server.py`.
+
 **Gemini 401 UNAUTHENTICATED:** API key was revoked (Google scans for exposed keys). Generate new key and base64 encode before sharing.
 
 **Eventbrite past date error:** "Start and end dates must be in the future" - test records have old dates.
@@ -164,6 +238,8 @@ All credentials in `.env` file (not committed):
 **Wrong organizer showing:** Check `EVENTBRITE_ORGANIZER_ID` in config.py is set to 5988913981.
 
 **Markdown not converting:** Ensure `_markdown_to_html()` is being called in `_build_description_html()`.
+
+**Processing status lost on restart:** The `processing_status` dict is in-memory. If the service restarts mid-processing, status is lost. Check logs for actual results.
 
 ## Manual steps for virtual events
 
