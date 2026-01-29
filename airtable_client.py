@@ -206,6 +206,52 @@ class AirtableClient:
             print(f"Note: Make sure '{PROCESSED_STATUS}' is a valid option in the Status field")
             return False
 
+    def add_image_attachment(
+        self,
+        record_id: str,
+        image_url: str,
+        filename: Optional[str] = None,
+    ) -> bool:
+        """
+        Add an image attachment to the Generated images field.
+
+        Appends to existing attachments rather than replacing them,
+        so we keep a history of all generated images.
+
+        Args:
+            record_id: Airtable record ID
+            image_url: Public URL of the image to attach
+            filename: Optional filename for the attachment
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        attachment_field = AIRTABLE_FIELDS.get("generated_images")
+
+        if not attachment_field:
+            print("Warning: No Generated images field configured")
+            return False
+
+        try:
+            # First, get existing attachments so we can append
+            record = self.table.get(record_id)
+            existing = record.get("fields", {}).get(attachment_field, [])
+
+            # Build new attachment
+            new_attachment = {"url": image_url}
+            if filename:
+                new_attachment["filename"] = filename
+
+            # Append new attachment to existing ones
+            updated_attachments = existing + [new_attachment]
+
+            self.table.update(record_id, {attachment_field: updated_attachments})
+            print(f"Added image attachment to record {record_id}")
+            return True
+        except Exception as e:
+            print(f"Error adding attachment to {record_id}: {e}")
+            return False
+
     def update_status(self, record_id: str, new_status: str) -> bool:
         """
         Update just the Status field of a record.

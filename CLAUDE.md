@@ -177,6 +177,7 @@ output.set('status', 'sent');
 |-----------|---------|
 | Eventbrite event ID | For updating existing events |
 | Eventbrite URL | Link to the created event |
+| Generated images | Attachment field - archives all generated/regenerated images |
 
 ---
 

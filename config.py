@@ -107,6 +107,8 @@ AIRTABLE_FIELDS = {
     # Eventbrite tracking
     "eventbrite_event_id": "Eventbrite event ID",  # For updating existing events
     "eventbrite_url": "Eventbrite URL",  # URL of the created event
+    # Image archive
+    "generated_images": "Generated images",  # Attachment field for image archive
 }
 
 # Status field values that indicate a record needs processing

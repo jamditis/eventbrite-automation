@@ -90,6 +90,15 @@ def process_record(record_id: str) -> dict:
         # Update Airtable with event ID for future updates
         airtable.mark_as_processed(event.record_id, eb_event.url, eb_event.event_id)
 
+        # Save image to Airtable attachment field for archive
+        logo_url = eventbrite.get_event_logo_url(eb_event.event_id)
+        if logo_url:
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            filename = f"{event.title[:30]}_{timestamp}.png"
+            airtable.add_image_attachment(event.record_id, logo_url, filename)
+        else:
+            print("Note: Could not fetch logo URL for attachment archive")
+
         # Clean up temp image
         if image_path.exists():
             image_path.unlink()
@@ -287,6 +296,15 @@ def regenerate_image_for_record(record_id: str) -> dict:
             image_path.unlink()
 
         if success:
+            # Save regenerated image to Airtable attachment field
+            logo_url = eventbrite.get_event_logo_url(event.eventbrite_event_id)
+            if logo_url:
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                filename = f"{event.title[:30]}_regen_{timestamp}.png"
+                airtable.add_image_attachment(event.record_id, logo_url, filename)
+            else:
+                print("Note: Could not fetch logo URL for attachment archive")
+
             # Reset status back to "Eventbrite draft created"
             airtable.update_status(record_id, PROCESSED_STATUS)
             print(f"Status reset to '{PROCESSED_STATUS}'")

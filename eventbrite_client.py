@@ -528,6 +528,32 @@ class EventbriteClient:
             print(f"  Note: Venue creation failed: {e}")
             return None
 
+    def get_event_logo_url(self, event_id: str) -> Optional[str]:
+        """
+        Fetch the public URL of an event's logo image.
+
+        Args:
+            event_id: Eventbrite event ID
+
+        Returns:
+            Public URL of the logo image, or None if not found
+        """
+        response = requests.get(
+            f"{self.base_url}/events/{event_id}/",
+            headers=self.headers,
+        )
+
+        if response.status_code == 200:
+            data = response.json()
+            logo = data.get("logo")
+            if logo:
+                # Try different URL fields - Eventbrite uses "original" for full-res
+                return (
+                    logo.get("original", {}).get("url")
+                    or logo.get("url")
+                )
+        return None
+
     def update_event_image(self, event_id: str, logo_id: str) -> bool:
         """
         Update the image/logo on an existing Eventbrite event.
