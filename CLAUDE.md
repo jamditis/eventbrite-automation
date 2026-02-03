@@ -1,5 +1,24 @@
 # Eventbrite automation
 
+## Bug-fixing workflow
+
+When a bug is reported, don't immediately attempt to fix it. Instead:
+
+1. **Write a failing test first** that reproduces the bug
+2. **Launch subagents** to work on fixing the bug
+3. **Verify the fix** by running the test — a passing test proves the bug is fixed
+
+## Workflow orchestration
+
+- **Plan first** — Enter plan mode for non-trivial tasks (3+ steps). If things go sideways, stop and re-plan.
+- **Use subagents** — Offload research, exploration, and parallel analysis. One task per subagent.
+- **Self-improvement** — After corrections, document lessons. Write rules that prevent the same mistake.
+- **Verify before done** — Never mark complete without proof. Run tests, check logs, demonstrate correctness.
+- **Demand elegance** — For non-trivial changes, ask "is there a more elegant way?" Skip for simple fixes.
+- **Autonomous fixing** — When given a bug: just fix it. Zero hand-holding required.
+
+---
+
 This project automates the creation of Eventbrite draft listings from Airtable form submissions, with AI-generated featured images.
 
 ---
