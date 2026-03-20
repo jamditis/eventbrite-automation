@@ -3,6 +3,7 @@ Configuration constants for Eventbrite automation.
 """
 
 import os
+import subprocess
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -15,17 +16,29 @@ TEMPLATES_DIR = PROJECT_ROOT / "templates"
 TEMP_DIR = PROJECT_ROOT / "temp"
 TEMP_DIR.mkdir(exist_ok=True)
 
-# Airtable configuration
-AIRTABLE_PAT = os.getenv("AIRTABLE_PAT")
+
+def _pass(key: str) -> str | None:
+    """Read a secret from the pass store. Returns None if not found."""
+    try:
+        return subprocess.check_output(
+            ["/home/jamditis/.claude/pass-get", key],
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return None
+
+
+# Airtable configuration — secret from pass, non-secret IDs from env
+AIRTABLE_PAT = _pass("claude/eventbrite/airtable-pat") or os.getenv("AIRTABLE_PAT")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_TABLE_ID = os.getenv("AIRTABLE_TABLE_ID")
 
 # Gemini configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = _pass("claude/eventbrite/gemini-api-key") or os.getenv("GEMINI_API_KEY")
 GEMINI_MODEL = "gemini-3-pro-image-preview"
 
 # Eventbrite configuration
-EVENTBRITE_PRIVATE_TOKEN = os.getenv("EVENTBRITE_PRIVATE_TOKEN")
+EVENTBRITE_PRIVATE_TOKEN = _pass("claude/eventbrite/eventbrite-token") or os.getenv("EVENTBRITE_PRIVATE_TOKEN")
 EVENTBRITE_API_BASE = "https://www.eventbriteapi.com/v3"
 # CCM organizer profile ID (not the Rutgers/RIIPL one)
 EVENTBRITE_ORGANIZER_ID = "5988913981"

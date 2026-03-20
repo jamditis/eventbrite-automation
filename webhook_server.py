@@ -15,11 +15,12 @@ import argparse
 import hmac
 import hashlib
 import os
+import re
 import threading
 from datetime import datetime
 from flask import Flask, request, jsonify
 
-from config import validate_config, REGENERATE_STATUS, PROCESSED_STATUS
+from config import validate_config, REGENERATE_STATUS, PROCESSED_STATUS, _pass
 from airtable_client import AirtableClient
 from eventbrite_client import EventbriteClient
 from image_generator import ImageGenerator
@@ -29,23 +30,27 @@ app = Flask(__name__)
 # Track background processing status
 processing_status = {}
 
-# Optional: Set a webhook secret for security
-# Generate with: python -c "import secrets; print(secrets.token_hex(32))"
-WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
+
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses."""
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "0"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+# Webhook secret — required for all mutation endpoints.
+# Loaded from pass store first, then env var fallback.
+WEBHOOK_SECRET = _pass("claude/eventbrite/webhook-secret") or os.getenv("WEBHOOK_SECRET", "")
 
 
-def verify_signature(payload: bytes, signature: str) -> bool:
-    """Verify webhook signature if secret is configured."""
+def verify_token(token: str) -> bool:
+    """Verify the static webhook token. Returns False if secret is not configured."""
     if not WEBHOOK_SECRET:
-        return True  # No verification if no secret set
-
-    expected = hmac.new(
-        WEBHOOK_SECRET.encode(),
-        payload,
-        hashlib.sha256
-    ).hexdigest()
-
-    return hmac.compare_digest(f"sha256={expected}", signature)
+        return False  # No secret configured = reject all requests
+    return hmac.compare_digest(WEBHOOK_SECRET, token)
 
 
 def process_record(record_id: str) -> dict:
@@ -115,7 +120,7 @@ def process_record(record_id: str) -> dict:
         print(f"Error processing record {record_id}: {e}")
         import traceback
         traceback.print_exc()
-        return {"success": False, "error": str(e), "record_id": record_id}
+        return {"success": False, "error": "processing_failed", "record_id": record_id}
 
 
 def process_record_async(record_id: str):
@@ -133,7 +138,6 @@ def process_record_async(record_id: str):
     except Exception as e:
         processing_status[record_id] = {
             "status": "failed",
-            "error": str(e),
             "completed": datetime.now().isoformat(),
         }
         print(f"Background processing failed for {record_id}: {e}")
@@ -172,11 +176,6 @@ def airtable_webhook():
         "sync": true
     }
     """
-    # Verify signature if configured
-    signature = request.headers.get("X-Webhook-Signature", "")
-    if WEBHOOK_SECRET and not verify_signature(request.data, signature):
-        return jsonify({"error": "Invalid signature"}), 401
-
     try:
         data = request.get_json()
 
@@ -212,6 +211,10 @@ def airtable_webhook():
         elif "record_id" in data:
             record_id = data["record_id"]
 
+            # Validate record_id format (Airtable IDs: rec + alphanumeric)
+            if not isinstance(record_id, str) or not re.match(r'^rec[a-zA-Z0-9]{10,20}$', record_id):
+                return jsonify({"error": "Invalid record_id format"}), 400
+
             if sync_mode:
                 # Synchronous processing (for manual testing)
                 result = process_record(record_id)
@@ -245,7 +248,7 @@ def airtable_webhook():
         print(f"Webhook error: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "internal_server_error"}), 500
 
 
 @app.route("/webhook/status/<record_id>", methods=["GET"])
@@ -327,7 +330,7 @@ def regenerate_image_for_record(record_id: str) -> dict:
         print(f"Error regenerating image for {record_id}: {e}")
         import traceback
         traceback.print_exc()
-        return {"success": False, "error": str(e), "record_id": record_id}
+        return {"success": False, "error": "regeneration_failed", "record_id": record_id}
 
 
 def regenerate_image_async(record_id: str):
@@ -348,7 +351,6 @@ def regenerate_image_async(record_id: str):
     except Exception as e:
         processing_status[record_id] = {
             "status": "failed",
-            "error": str(e),
             "completed": datetime.now().isoformat(),
         }
         print(f"Image regeneration failed for {record_id}: {e}")
@@ -419,7 +421,7 @@ def regenerate_image_webhook():
         print(f"Regenerate image webhook error: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "internal_server_error"}), 500
 
 
 @app.route("/webhook/test", methods=["POST", "GET"])
@@ -438,8 +440,6 @@ def main():
     parser = argparse.ArgumentParser(description="Eventbrite automation webhook server")
     parser.add_argument("--port", type=int, default=5000, help="Port to run on")
     parser.add_argument("--host", default="0.0.0.0", help="Host to bind to")
-    parser.add_argument("--debug", action="store_true", help="Run in debug mode")
-
     args = parser.parse_args()
 
     # Validate configuration
@@ -450,12 +450,17 @@ def main():
         print(f"Configuration error: {e}")
         return
 
+    if not WEBHOOK_SECRET:
+        print("WARNING: No WEBHOOK_SECRET configured. All POST requests will be rejected.")
+        print("Set via: pass set claude/eventbrite/webhook-secret <secret>")
+
     print(f"\nStarting webhook server on {args.host}:{args.port}")
     print(f"Webhook endpoint: http://{args.host}:{args.port}/webhook/airtable")
     print(f"Health check: http://{args.host}:{args.port}/")
     print("\nWaiting for webhooks...\n")
 
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    # Never run with debug=True in production — exposes interactive debugger
+    app.run(host=args.host, port=args.port, debug=False)
 
 
 if __name__ == "__main__":
