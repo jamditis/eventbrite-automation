@@ -263,9 +263,8 @@ def check_status(record_id: str):
 
 def regenerate_image_for_record(record_id: str) -> dict:
     """Regenerate image for an existing Eventbrite event."""
-    airtable = AirtableClient()
-
     try:
+        airtable = AirtableClient()
         eventbrite = EventbriteClient()
         image_gen = ImageGenerator()
 
@@ -274,6 +273,7 @@ def regenerate_image_for_record(record_id: str) -> dict:
         if event is None:
             msg = f"Record not found: {record_id}"
             print(f"Regenerate failed: {msg}")
+            airtable.update_log(record_id, f"Regeneration failed: {msg}")
             return {"success": False, "error": msg}
 
         # Resolve event ID — fall back to extracting from URL if field is empty
@@ -341,7 +341,10 @@ def regenerate_image_for_record(record_id: str) -> dict:
         print(f"Error regenerating image for {record_id}: {e}")
         import traceback
         traceback.print_exc()
-        airtable.update_log(record_id, f"Regeneration error: {e}")
+        try:
+            AirtableClient().update_log(record_id, f"Regeneration error: {e}")
+        except Exception:
+            pass
         return {"success": False, "error": str(e), "record_id": record_id}
 
 

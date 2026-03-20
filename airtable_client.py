@@ -294,6 +294,11 @@ class AirtableClient:
             entry = f"[{timestamp}] {message}"
             updated = f"{existing}\n{entry}".strip()
 
+            # Keep only the last 50 lines to avoid hitting Airtable's char limit
+            lines = updated.split("\n")
+            if len(lines) > 50:
+                updated = "\n".join(lines[-50:])
+
             self.table.update(record_id, {log_field: updated})
             return True
         except Exception as e:
