@@ -5,6 +5,7 @@ Configuration constants for Eventbrite automation.
 import os
 import subprocess
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -17,14 +18,15 @@ TEMP_DIR = PROJECT_ROOT / "temp"
 TEMP_DIR.mkdir(exist_ok=True)
 
 
-def _pass(key: str) -> str | None:
+def _pass(key: str) -> Optional[str]:
     """Read a secret from the pass store. Returns None if not found."""
     try:
         return subprocess.check_output(
             ["/home/jamditis/.claude/pass-get", key],
             stderr=subprocess.DEVNULL,
+            timeout=5,
         ).decode().strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
         return None
 
 

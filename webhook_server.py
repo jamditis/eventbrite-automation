@@ -41,9 +41,19 @@ def add_security_headers(response):
     response.headers["Cache-Control"] = "no-store"
     return response
 
-# Webhook secret — required for all mutation endpoints.
-# Loaded from pass store first, then env var fallback.
+# Webhook secret — loaded but not currently enforced on endpoints.
+# Auth was removed because the Airtable automation script cannot send
+# custom headers. The verify_token function is retained for future use
+# if/when the Airtable script is updated to include X-Webhook-Secret.
 WEBHOOK_SECRET = _pass("claude/eventbrite/webhook-secret") or os.getenv("WEBHOOK_SECRET", "")
+
+# Compiled regex for Airtable record ID validation
+RECORD_ID_RE = re.compile(r'rec[a-zA-Z0-9]{10,20}$')
+
+
+def _valid_record_id(record_id: str) -> bool:
+    """Validate that record_id matches Airtable's format."""
+    return isinstance(record_id, str) and RECORD_ID_RE.fullmatch(record_id) is not None
 
 
 def verify_token(token: str) -> bool:
@@ -211,8 +221,7 @@ def airtable_webhook():
         elif "record_id" in data:
             record_id = data["record_id"]
 
-            # Validate record_id format (Airtable IDs: rec + alphanumeric)
-            if not isinstance(record_id, str) or not re.match(r'^rec[a-zA-Z0-9]{10,20}$', record_id):
+            if not _valid_record_id(record_id):
                 return jsonify({"error": "Invalid record_id format"}), 400
 
             if sync_mode:
@@ -253,11 +262,16 @@ def airtable_webhook():
 
 @app.route("/webhook/status/<record_id>", methods=["GET"])
 def check_status(record_id: str):
-    """Check the processing status of a record."""
+    """Check the processing status of a record. Returns status only, no result details."""
     if record_id in processing_status:
-        return jsonify(processing_status[record_id])
+        entry = processing_status[record_id]
+        return jsonify({
+            "status": entry.get("status"),
+            "started": entry.get("started"),
+            "completed": entry.get("completed"),
+        })
     else:
-        return jsonify({"status": "unknown", "message": "No processing record found"}), 404
+        return jsonify({"status": "unknown"}), 404
 
 
 def regenerate_image_for_record(record_id: str) -> dict:
@@ -387,6 +401,10 @@ def regenerate_image_webhook():
             return jsonify({"error": "record_id is required"}), 400
 
         record_id = data["record_id"]
+
+        if not _valid_record_id(record_id):
+            return jsonify({"error": "Invalid record_id format"}), 400
+
         sync_mode = data.get("sync", False)
 
         print(f"\n{'='*60}")
@@ -451,8 +469,7 @@ def main():
         return
 
     if not WEBHOOK_SECRET:
-        print("WARNING: No WEBHOOK_SECRET configured. All POST requests will be rejected.")
-        print("Set via: pass set claude/eventbrite/webhook-secret <secret>")
+        print("WARNING: No WEBHOOK_SECRET configured. POST requests will be accepted without authentication.")
 
     print(f"\nStarting webhook server on {args.host}:{args.port}")
     print(f"Webhook endpoint: http://{args.host}:{args.port}/webhook/airtable")
