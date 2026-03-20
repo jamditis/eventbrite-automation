@@ -4,6 +4,7 @@ Airtable API client for event automation.
 Handles fetching new event requests and updating records with Eventbrite URLs.
 """
 
+import re
 from typing import Optional
 from dataclasses import dataclass
 from datetime import datetime
@@ -276,6 +277,54 @@ class AirtableClient:
         except Exception as e:
             print(f"Error updating status for {record_id}: {e}")
             return False
+
+    def update_log(self, record_id: str, message: str) -> bool:
+        """Append a timestamped message to the Automation log field."""
+        log_field = AIRTABLE_FIELDS.get("automation_log")
+        if not log_field:
+            print(f"Warning: No Automation log field configured")
+            return False
+
+        try:
+            # Get existing log content to append
+            record = self.table.get(record_id)
+            existing = record.get("fields", {}).get(log_field, "")
+
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            entry = f"[{timestamp}] {message}"
+            updated = f"{existing}\n{entry}".strip()
+
+            # Keep only the last 50 lines to avoid hitting Airtable's char limit
+            lines = updated.split("\n")
+            if len(lines) > 50:
+                updated = "\n".join(lines[-50:])
+
+            self.table.update(record_id, {log_field: updated})
+            return True
+        except Exception as e:
+            print(f"Error updating log for {record_id}: {e}")
+            return False
+
+    def update_event_id(self, record_id: str, event_id: str) -> bool:
+        """Store the Eventbrite event ID for a record."""
+        field = AIRTABLE_FIELDS.get("eventbrite_event_id")
+        if not field:
+            return False
+        try:
+            self.table.update(record_id, {field: event_id})
+            print(f"Stored event ID {event_id} for record {record_id}")
+            return True
+        except Exception as e:
+            print(f"Error storing event ID for {record_id}: {e}")
+            return False
+
+    @staticmethod
+    def extract_event_id_from_url(url: str) -> Optional[str]:
+        """Extract Eventbrite event ID from a URL like .../tickets-1234567890."""
+        if not url:
+            return None
+        match = re.search(r'(\d{10,})', url)
+        return match.group(1) if match else None
 
     def _parse_record(self, record: dict) -> EventRecord:
         """Parse an Airtable record into an EventRecord dataclass."""
