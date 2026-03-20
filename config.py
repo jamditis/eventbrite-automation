@@ -109,6 +109,8 @@ AIRTABLE_FIELDS = {
     "eventbrite_url": "Eventbrite URL",  # URL of the created event
     # Image archive
     "generated_images": "Generated images",  # Attachment field for image archive
+    # Automation logging
+    "automation_log": "Logs",  # Long text field for error messages and status updates
 }
 
 # Status field values that indicate a record needs processing

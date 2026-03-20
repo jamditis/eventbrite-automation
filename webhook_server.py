@@ -115,6 +115,10 @@ def process_record(record_id: str) -> dict:
         print(f"Error processing record {record_id}: {e}")
         import traceback
         traceback.print_exc()
+        try:
+            AirtableClient().update_log(record_id, f"Processing error: {e}")
+        except Exception:
+            pass
         return {"success": False, "error": str(e), "record_id": record_id}
 
 
@@ -259,27 +263,36 @@ def check_status(record_id: str):
 
 def regenerate_image_for_record(record_id: str) -> dict:
     """Regenerate image for an existing Eventbrite event."""
+    airtable = AirtableClient()
+
     try:
-        # Initialize clients
-        airtable = AirtableClient()
         eventbrite = EventbriteClient()
         image_gen = ImageGenerator()
 
         # Get the record
         event = airtable.get_record_by_id(record_id)
         if event is None:
-            return {"success": False, "error": f"Record not found: {record_id}"}
+            msg = f"Record not found: {record_id}"
+            print(f"Regenerate failed: {msg}")
+            return {"success": False, "error": msg}
 
-        # Check if we have an existing Eventbrite event ID
-        if not event.eventbrite_event_id:
-            return {
-                "success": False,
-                "error": "No Eventbrite event ID found. Process the record first to create an event.",
-                "record_id": record_id,
-            }
+        # Resolve event ID — fall back to extracting from URL if field is empty
+        event_id = event.eventbrite_event_id
+        if not event_id and event.eventbrite_url:
+            event_id = AirtableClient.extract_event_id_from_url(event.eventbrite_url)
+            if event_id:
+                print(f"Extracted event ID {event_id} from URL (was missing from field)")
+                airtable.update_event_id(record_id, event_id)
+                airtable.update_log(record_id, f"Auto-recovered event ID {event_id} from URL")
+
+        if not event_id:
+            msg = "No Eventbrite event ID found and no URL to extract it from. Set status to 'Todo' to create the event first."
+            print(f"Regenerate failed for {record_id}: {msg}")
+            airtable.update_log(record_id, f"Regeneration failed: {msg}")
+            return {"success": False, "error": msg, "record_id": record_id}
 
         print(f"Regenerating image for: {event.title}")
-        print(f"Eventbrite event ID: {event.eventbrite_event_id}")
+        print(f"Eventbrite event ID: {event_id}")
 
         # Generate new image
         image_path = image_gen.generate_event_image(event)
@@ -289,7 +302,7 @@ def regenerate_image_for_record(record_id: str) -> dict:
         logo_id = eventbrite.upload_image(image_path)
 
         # Update the existing event with new image
-        success = eventbrite.update_event_image(event.eventbrite_event_id, logo_id)
+        success = eventbrite.update_event_image(event_id, logo_id)
 
         # Clean up temp image
         if image_path.exists():
@@ -297,7 +310,7 @@ def regenerate_image_for_record(record_id: str) -> dict:
 
         if success:
             # Save regenerated image to Airtable attachment field
-            logo_url = eventbrite.get_event_logo_url(event.eventbrite_event_id)
+            logo_url = eventbrite.get_event_logo_url(event_id)
             if logo_url:
                 timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 filename = f"{event.title[:30]}_regen_{timestamp}.png"
@@ -309,24 +322,26 @@ def regenerate_image_for_record(record_id: str) -> dict:
             airtable.update_status(record_id, PROCESSED_STATUS)
             print(f"Status reset to '{PROCESSED_STATUS}'")
 
+            airtable.update_log(record_id, "Image regenerated successfully")
+
             return {
                 "success": True,
                 "record_id": record_id,
                 "event_title": event.title,
-                "eventbrite_event_id": event.eventbrite_event_id,
+                "eventbrite_event_id": event_id,
                 "message": "Image regenerated and updated successfully",
             }
         else:
-            return {
-                "success": False,
-                "error": "Failed to update Eventbrite event with new image",
-                "record_id": record_id,
-            }
+            msg = "Failed to update Eventbrite event with new image"
+            print(f"Regenerate failed for {record_id}: {msg}")
+            airtable.update_log(record_id, f"Regeneration failed: {msg}")
+            return {"success": False, "error": msg, "record_id": record_id}
 
     except Exception as e:
         print(f"Error regenerating image for {record_id}: {e}")
         import traceback
         traceback.print_exc()
+        airtable.update_log(record_id, f"Regeneration error: {e}")
         return {"success": False, "error": str(e), "record_id": record_id}
 
 
