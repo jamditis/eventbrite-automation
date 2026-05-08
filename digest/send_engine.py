@@ -7,10 +7,13 @@ Two-line dup defense:
      (`~/.claude/workstation/sent-emails.db`) — if a wake fires twice or a
      scheduler hiccup duplicates the call, the ledger blocks the second send.
 
-Bcc is set as a header on the EmailMessage; smtplib.send_message() reads it
-to compute envelope recipients then strips it before transmission, so the
-"to" recipient never sees the Bcc list. Recipients of the Bcc see no other
-recipient names since they receive their own copy.
+Bcc handling: addresses listed in `bcc_always` are set on the EmailMessage's
+Bcc header. smtplib.send_message() reads the Bcc header to compute envelope
+recipients, then strips that header before transmission — so the rendered
+email body the recipients actually see does NOT contain a "Bcc:" line.
+However, the visible "To" header IS present in the transmitted message and
+visible to ALL recipients (Bcc included). If per-recipient isolation
+matters, the orchestrator must send separate messages.
 """
 from __future__ import annotations
 

@@ -125,6 +125,15 @@ def test_render_escapes_html_in_attendee_data():
     assert "onerror=alert" not in html
 
 
+def test_autoescape_is_active_for_digest_template():
+    """Pin the autoescape config: a future tweak that flips autoescape rules
+    (e.g., select_autoescape(['xml']) silently disables HTML escaping for .j2)
+    would otherwise re-open the XSS hole this module guards against.
+    """
+    r = EmailRenderer()
+    assert r._env.autoescape("digest.html.j2") is True
+
+
 def test_subject_format_daily():
     r = EmailRenderer()
     subj = r.format_subject_daily("AI in the newsroom", new_count=4, total=47)

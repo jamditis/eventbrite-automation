@@ -64,6 +64,21 @@ def test_includes_checked_in_status(mock_crm, mock_llm):
     assert profile is not None
 
 
+def test_empty_email_attendee_skips_crm_and_llm(mock_crm, mock_llm):
+    """Privacy invariant adjacency: empty-email attendees can't be CRM-matched,
+    so the LLM must not be invoked for them. Pinning this branch prevents a
+    future regression that would silently send LLM-generated prose about
+    strangers we can't even uniquely identify.
+    """
+    builder = ProfileBuilder(crm=mock_crm, llm=mock_llm)
+    a = _attendee(email="")
+    profile = builder.build(a)
+    assert profile is not None
+    assert profile.is_known_ccm_contact is False
+    mock_crm.find_by_email.assert_not_called()
+    mock_llm.run_blurb.assert_not_called()
+
+
 def test_unknown_attendee_uses_form_only_blurb_no_llm(mock_crm, mock_llm):
     """Privacy invariant: LLM is NEVER called for non-CRM contacts."""
     mock_crm.find_by_email.return_value = None

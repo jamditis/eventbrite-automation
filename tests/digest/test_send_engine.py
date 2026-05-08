@@ -1,3 +1,5 @@
+import smtplib
+from typing import ClassVar
 from unittest.mock import MagicMock
 
 import pytest
@@ -5,29 +7,60 @@ import pytest
 from digest.send_engine import SendEngine, SendResult
 
 
+class _FakeSMTP(smtplib.SMTP):
+    """Subclass of the real smtplib.SMTP so send_message runs real envelope-
+    compute + Bcc-strip logic. We skip the network connect by overriding
+    __init__ and capture both the pre-send EmailMessage and the post-strip
+    sendmail() arguments so tests can verify both layers of the contract.
+    """
+
+    instances: ClassVar[list["_FakeSMTP"]] = []
+
+    def __init__(self, host="", port=0, *args, **kwargs):
+        self._host = host
+        self._port = port
+        self.timeout = 60
+        self.esmtp_features = {}
+        self.command_encoding = "ascii"
+        self.source_address = None
+        self.local_hostname = "test"
+        self.does_esmtp = False
+        self.captured: dict = {
+            "init_args": (host, port),
+            "sendmail_calls": [],
+            "send_message_msgs": [],
+        }
+        _FakeSMTP.instances.append(self)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def ehlo_or_helo_if_needed(self):
+        return None
+
+    def login(self, user, pw):
+        self.captured["login"] = (user, pw)
+
+    def send_message(self, msg, from_addr=None, to_addrs=None, *a, **kw):
+        self.captured["send_message_msgs"].append(msg)
+        return super().send_message(msg, from_addr, to_addrs, *a, **kw)
+
+    def sendmail(self, from_addr, to_addrs, msg, mail_options=(), rcpt_options=()):
+        msg_str = msg if isinstance(msg, str) else msg.decode("utf-8", errors="replace")
+        self.captured["sendmail_calls"].append(
+            {"from_addr": from_addr, "to_addrs": list(to_addrs), "msg_str": msg_str}
+        )
+        return {}
+
+
 @pytest.fixture
 def smtp_mock(monkeypatch):
-    """Stub smtplib.SMTP_SSL; capture init args, login, and send_message calls."""
-    sent = []
-
-    class FakeSMTP:
-        def __init__(self, *a, **kw):
-            sent.append({"init_args": a, "init_kw": kw})
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def login(self, user, pw):
-            sent[-1]["login"] = (user, pw)
-
-        def send_message(self, msg):
-            sent[-1]["msg"] = msg
-
-    monkeypatch.setattr("digest.send_engine.smtplib.SMTP_SSL", FakeSMTP)
-    return sent
+    _FakeSMTP.instances = []
+    monkeypatch.setattr("digest.send_engine.smtplib.SMTP_SSL", _FakeSMTP)
+    return _FakeSMTP.instances
 
 
 @pytest.fixture
@@ -65,12 +98,38 @@ def test_send_calls_smtp_with_correct_envelope(smtp_mock, ledger_mock):
     )
     assert isinstance(result, SendResult)
     assert result.sent is True
-    msg = smtp_mock[0]["msg"]
+    msg = smtp_mock[0].captured["send_message_msgs"][0]
     assert msg["To"] == "panelist@example.com"
     assert msg["Reply-To"] == "host@example.com"
     assert msg["Subject"] == "Test"
-    assert msg["Bcc"] == "joe@example.com, cassandra@example.com"
     assert msg["From"] == "Center for Cooperative Media <njnewscommons@gmail.com>"
+
+
+def test_envelope_to_includes_bcc_addresses_and_msg_strips_bcc_header(
+    smtp_mock, ledger_mock
+):
+    """Verifies the actual SMTP-level Bcc contract: Bcc addresses end up in
+    the envelope-to (recipients receive the message) but the transmitted
+    message bytes do NOT contain a Bcc: header (recipients can't see the
+    Bcc list). Exercises the real smtplib.SMTP.send_message logic, not just
+    the pre-send EmailMessage object.
+    """
+    engine = _engine(ledger_mock)
+    engine.send(
+        to=["panelist@example.com"],
+        reply_to="host@example.com",
+        subject="Test",
+        html_body="<p>hi</p>",
+        text_body="hi",
+        slug="x",
+    )
+    sm = smtp_mock[0].captured["sendmail_calls"][0]
+    assert "panelist@example.com" in sm["to_addrs"]
+    assert "joe@example.com" in sm["to_addrs"]
+    assert "cassandra@example.com" in sm["to_addrs"]
+    assert "Bcc:" not in sm["msg_str"]
+    assert "joe@example.com" not in sm["msg_str"]
+    assert "cassandra@example.com" not in sm["msg_str"]
 
 
 def test_send_logs_in_with_smtp_credentials(smtp_mock, ledger_mock):
@@ -83,8 +142,8 @@ def test_send_logs_in_with_smtp_credentials(smtp_mock, ledger_mock):
         text_body="x",
         slug="x",
     )
-    assert smtp_mock[0]["login"] == ("njnewscommons@gmail.com", "app-pw")
-    assert smtp_mock[0]["init_args"] == ("smtp.gmail.com", 465)
+    assert smtp_mock[0].captured["login"] == ("njnewscommons@gmail.com", "app-pw")
+    assert smtp_mock[0].captured["init_args"] == ("smtp.gmail.com", 465)
 
 
 def test_send_attaches_html_alternative(smtp_mock, ledger_mock):
@@ -97,7 +156,7 @@ def test_send_attaches_html_alternative(smtp_mock, ledger_mock):
         text_body="Plain body",
         slug="x",
     )
-    msg = smtp_mock[0]["msg"]
+    msg = smtp_mock[0].captured["send_message_msgs"][0]
     assert msg.is_multipart()
     parts = list(msg.iter_parts())
     types = [p.get_content_type() for p in parts]
@@ -105,7 +164,12 @@ def test_send_attaches_html_alternative(smtp_mock, ledger_mock):
     assert "text/html" in types
 
 
-def test_send_includes_list_unsubscribe_header(smtp_mock, ledger_mock):
+def test_send_includes_well_formed_list_unsubscribe_header(smtp_mock, ledger_mock):
+    """List-Unsubscribe must be a syntactically valid mailto: URI inside angle
+    brackets per RFC 2369; substring presence isn't enough.
+    """
+    import re
+
     engine = _engine(ledger_mock)
     engine.send(
         to=["a@x.com"],
@@ -115,9 +179,11 @@ def test_send_includes_list_unsubscribe_header(smtp_mock, ledger_mock):
         text_body="x",
         slug="ai-newsroom-march-2026",
     )
-    lu = smtp_mock[0]["msg"]["List-Unsubscribe"]
-    assert "mailto:njnewscommons@gmail.com" in lu
-    assert "ai-newsroom-march-2026" in lu
+    lu = smtp_mock[0].captured["send_message_msgs"][0]["List-Unsubscribe"]
+    m = re.fullmatch(r"<mailto:([^?]+)\?subject=([^>]+)>", lu)
+    assert m, f"List-Unsubscribe not in valid mailto-URI form: {lu!r}"
+    assert m.group(1) == "njnewscommons@gmail.com"
+    assert m.group(2) == "unsubscribe%20ai-newsroom-march-2026"
 
 
 def test_send_omits_bcc_header_when_no_bcc_configured(smtp_mock, ledger_mock):
@@ -130,7 +196,10 @@ def test_send_omits_bcc_header_when_no_bcc_configured(smtp_mock, ledger_mock):
         text_body="x",
         slug="x",
     )
-    assert smtp_mock[0]["msg"]["Bcc"] is None
+    msg = smtp_mock[0].captured["send_message_msgs"][0]
+    assert msg["Bcc"] is None
+    sm = smtp_mock[0].captured["sendmail_calls"][0]
+    assert sm["to_addrs"] == ["a@x.com"]
 
 
 def test_send_aborts_when_ledger_says_duplicate(smtp_mock, ledger_mock):
