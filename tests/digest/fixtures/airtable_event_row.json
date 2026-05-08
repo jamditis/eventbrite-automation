@@ -1,0 +1,21 @@
+{
+  "id": "recABC123",
+  "fields": {
+    "Event slug": "ai-newsroom-march-2026",
+    "Event title": "AI in the newsroom",
+    "Eventbrite event ID": "EVT-12345",
+    "Enabled": true,
+    "Speaker emails": "panelist1@example.com, panelist2@example.com",
+    "Lead host email": "host@example.com",
+    "Days out to start": 7,
+    "Send time (ET)": "07:00",
+    "Registration question IDs to include": "",
+    "Event start (ET)": "2026-05-15T13:00:00.000Z",
+    "Last digest sent at": null,
+    "Last attendee cursor": null,
+    "Last digest attendee count": 0,
+    "Initial briefing sent at": null,
+    "Initial briefing requested at": null,
+    "Last error": ""
+  }
+}

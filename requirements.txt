@@ -1,7 +1,7 @@
 # Eventbrite automation dependencies
 # Install with: pip install -r requirements.txt
 
-# Core dependencies
+# Core dependencies (shared by webhook + digest cron)
 pyairtable>=3.3
 google-genai>=1.0
 requests>=2.32
@@ -11,3 +11,12 @@ Pillow>=10.0
 # Webhook server (for Raspberry Pi deployment)
 flask>=3.0
 gunicorn>=21.0
+
+# Attendee digest cron service
+jinja2>=3.1.4
+python-dateutil>=2.9.0
+
+# Tests + lint (digest service has full TDD coverage)
+pytest>=8.0
+pytest-mock>=3.12
+ruff>=0.6.0

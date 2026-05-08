@@ -1,0 +1,10 @@
+[Unit]
+Description=Run eventbrite digest cron every 30 minutes
+
+[Timer]
+OnCalendar=*:0/30
+Persistent=true
+Unit=digest-cron.service
+
+[Install]
+WantedBy=timers.target

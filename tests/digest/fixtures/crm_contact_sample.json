@@ -1,0 +1,37 @@
+{
+  "no_match": {"items": [], "total": 0},
+  "exact_match": {
+    "items": [
+      {
+        "id": 42,
+        "name": "Sarah Smith",
+        "email": "sarah@northjersey.example",
+        "alt_email": null,
+        "work_email": null,
+        "organization": "North Jersey Journal",
+        "role": "Editor",
+        "notes": "Covers municipal government and elections.",
+        "interactions": [
+          {"type": "meeting", "summary": "Coffee chat re: AI tools", "created_at": "2026-04-15"}
+        ]
+      }
+    ],
+    "total": 1
+  },
+  "substring_only": {
+    "items": [
+      {
+        "id": 99,
+        "name": "Sarah Other",
+        "email": "sarah@othersite.example",
+        "alt_email": null,
+        "work_email": null,
+        "organization": "Other",
+        "role": "Editor",
+        "notes": "",
+        "interactions": []
+      }
+    ],
+    "total": 1
+  }
+}

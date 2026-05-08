@@ -1,0 +1,12 @@
+[Unit]
+Description=Eventbrite attendee digest cron
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=jamditis
+Group=jamditis
+WorkingDirectory=/home/jamditis/projects/eventbrite-automation
+EnvironmentFile=/home/jamditis/projects/eventbrite-automation/.env
+ExecStart=/usr/bin/timeout --foreground 600 /home/jamditis/projects/eventbrite-automation/venv/bin/python -m digest.cron
