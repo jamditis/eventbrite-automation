@@ -1,0 +1,9 @@
+/var/log/digest-cron.log {
+    weekly
+    rotate 8
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 jamditis jamditis
+}
