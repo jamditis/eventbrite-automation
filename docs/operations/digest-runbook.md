@@ -15,7 +15,7 @@ Sends one daily digest email per opted-in event to the event's speakers/hosts/in
 | Lock | `~/.local/state/digest-cron.lock` (XDG state dir; flock-based, auto-released on process exit) |
 | State | Airtable `EventDigests` base — see "State fields" below |
 | Dup-send safety net | `~/.claude/workstation/sent-emails.db` (email_ledger from `houseofjawn-bot/scheduler/`) |
-| Lifetime install path | `/home/jamditis/projects/eventbrite-automation/` (hardcoded in systemd unit; relocating requires re-running `install.sh` after editing the service template) |
+| Lifetime install path | `/home/jamditis/projects/eventbrite-automation/` (hardcoded in systemd unit; relocating requires re-running `install-digest.sh` after editing the service template) |
 
 ### State fields (Airtable `Events` table)
 
@@ -102,7 +102,7 @@ test -s /home/jamditis/projects/eventbrite-automation/.env && echo "ok" || echo 
 
 ### `ModuleNotFoundError: No module named 'digest'`
 
-The systemd unit's `Environment=PYTHONPATH=...` line isn't reaching Python. Either the unit was hand-edited and lost it, or the venv path is wrong. Reinstall via `bash deploy/install.sh`.
+The `digest/` package is at the repo root, so the import works only when the working directory is the repo root. The systemd unit pins `WorkingDirectory=/home/jamditis/projects/eventbrite-automation`. If that line was hand-edited away (or the repo was moved without re-running install), Python can't find the package. Reinstall via `bash deploy/install-digest.sh`.
 
 ### `CRM transport error for ... ConnectionError: ...`
 
