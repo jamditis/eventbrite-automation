@@ -158,6 +158,35 @@ class AirtableClient:
             },
         )
 
+    def update_after_initial_send(
+        self,
+        row: EventRow,
+        *,
+        sent_at: datetime,
+        attendee_cursor: str,
+        attendee_count: int,
+    ) -> None:
+        """Atomic state write for the initial-briefing path.
+
+        Writes all of: last-sent-at, attendee cursor, attendee count,
+        initial-briefing-sent-at, clears initial-briefing-requested-at, and
+        clears last-error in a single Airtable update. Avoids the partial-
+        failure window where SMTP succeeds and the next tick re-fires the
+        initial briefing because only the first of three sequential writes
+        landed.
+        """
+        self._table.update(
+            row.record_id,
+            {
+                FIELD.LAST_DIGEST_SENT_AT: sent_at.isoformat(),
+                FIELD.LAST_ATTENDEE_CURSOR: attendee_cursor,
+                FIELD.LAST_DIGEST_COUNT: attendee_count,
+                FIELD.INITIAL_BRIEFING_SENT_AT: sent_at.isoformat(),
+                FIELD.INITIAL_BRIEFING_REQUESTED_AT: None,
+                FIELD.LAST_ERROR: "",
+            },
+        )
+
     def record_error(self, row: EventRow, message: str) -> None:
         self._table.update(row.record_id, {FIELD.LAST_ERROR: message[:_LAST_ERROR_MAX]})
 

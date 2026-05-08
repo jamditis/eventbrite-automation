@@ -134,3 +134,47 @@ def test_format_event_when_renders_friendly_string():
     assert "2026" in out
     assert "1:00 PM" in out
     assert "ET" in out
+
+
+def test_format_event_when_uses_event_timezone_not_hardcoded_et():
+    """Eventbrite events outside ET must render with the event's actual tz
+    abbreviation, not 'ET'.
+    """
+    out = _format_event_when("2026-05-15T10:00:00", "America/Los_Angeles")
+    assert "PT" in out
+    assert "ET" not in out
+
+
+def test_format_event_when_falls_back_to_zone_name_for_unmapped():
+    out = _format_event_when("2026-05-15T10:00:00", "Europe/London")
+    assert "Europe/London" in out
+
+
+def test_already_sent_today_normalizes_naive_iso_as_utc():
+    """Airtable can hand back naive ISO strings; without tz normalization,
+    astimezone() interprets them in the host's local zone and the calendar
+    day shifts. This pins UTC as the assumed zone for naive input.
+    """
+    from digest.cron import _already_sent_today
+
+    naive_today = "2026-05-14T11:30:00"
+    now = datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
+    assert _already_sent_today(naive_today, now) is True
+
+
+def test_event_start_equal_to_now_is_outside_window():
+    """Boundary: event_start == now treats the event as already started
+    (window closed)."""
+    r = _row(event_start_et="2026-05-14T12:00:00+00:00")
+    now = datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
+    assert _now_in_window(r, now) is False
+
+
+def test_send_time_exactly_now_is_sendable():
+    """Boundary: now_et == threshold counts as past-send-time."""
+    from digest.cron import _is_past_send_time_today
+
+    # 7:00 AM ET = 11:00 AM UTC (during EDT, but the equality logic is
+    # zone-aware via astimezone, so this works either way).
+    now_et_7am = datetime(2026, 5, 14, 11, 0, tzinfo=UTC)
+    assert _is_past_send_time_today("07:00", now_et_7am) is True

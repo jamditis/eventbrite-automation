@@ -13,8 +13,12 @@ Decision sequence per event row, per tick:
   7. Send daily digest. If silent-when-empty (no new attendees), bail
      before SMTP without recording state changes.
 
-The lock file (XDG state dir) blocks double-execution if a tick runs
-long enough that the next cron tick fires before this one returns.
+Deployment constraints (per CLAUDE.md "services run on houseofjawn only"):
+  - flock() in _acquire_lock is per-machine. Cross-machine coordination
+    is not a goal — only houseofjawn runs this cron. If that ever
+    changes, replace the lock with an Airtable lease field.
+  - _format_event_when uses GNU `%-d` / `%-I` strftime flags which work
+    on Linux but not Windows. Fine on houseofjawn.
 """
 from __future__ import annotations
 
@@ -55,7 +59,7 @@ def parse_send_time_et(s: str) -> tuple[int, int]:
 def _now_in_window(row: EventRow, now: datetime) -> bool:
     if not row.event_start_et:
         return False
-    event_start = datetime.fromisoformat(row.event_start_et.replace("Z", "+00:00"))
+    event_start = _parse_iso_aware(row.event_start_et)
     if event_start <= now:
         return False
     days_until = (event_start - now).total_seconds() / 86400
@@ -69,10 +73,24 @@ def _is_past_send_time_today(send_time_et: str, now: datetime) -> bool:
     return now_et >= threshold
 
 
+def _parse_iso_aware(s: str) -> datetime:
+    """Parse an ISO timestamp; assume UTC if no timezone info is present.
+
+    Airtable can hand back naive ISO strings (no Z, no offset) when staff
+    type a datetime in the UI without specifying tz. We normalize on read
+    rather than letting astimezone() interpret naive timestamps in the
+    machine's local zone, which would shift the calendar day.
+    """
+    parsed = datetime.fromisoformat(s.replace("Z", "+00:00"))
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed
+
+
 def _already_sent_today(last_sent_at: str | None, now: datetime) -> bool:
     if not last_sent_at:
         return False
-    last = datetime.fromisoformat(last_sent_at.replace("Z", "+00:00"))
+    last = _parse_iso_aware(last_sent_at)
     return last.astimezone(ET).date() == now.astimezone(ET).date()
 
 
@@ -94,10 +112,43 @@ def should_send_today(row: EventRow, now: datetime) -> bool:
     return True
 
 
-def _format_event_when(start_local: str, _timezone: str) -> str:
-    """`2026-05-15T13:00:00` + tz string -> `Friday, May 15, 2026 at 1:00 PM ET`."""
+_TZ_ABBREVS = {
+    "America/New_York": "ET",
+    "America/Chicago": "CT",
+    "America/Denver": "MT",
+    "America/Los_Angeles": "PT",
+    "America/Phoenix": "MST",
+    "America/Anchorage": "AKT",
+    "Pacific/Honolulu": "HT",
+    "UTC": "UTC",
+}
+
+
+def _format_event_when(start_local: str, tz_name: str) -> str:
+    """`2026-05-15T13:00:00` + tz string -> `Friday, May 15, 2026 at 1:00 PM ET`.
+
+    Honors the event's actual timezone — virtual events not in ET render
+    with the right local-time string and zone abbreviation. Falls back to
+    rendering the bare zone name (e.g., 'Europe/London') if no abbreviation
+    is mapped, so consumers always see something recognizable.
+    """
     dt = datetime.fromisoformat(start_local)
-    return dt.strftime("%A, %B %-d, %Y at %-I:%M %p ET")
+    abbrev = _TZ_ABBREVS.get(tz_name, tz_name)
+    return dt.strftime(f"%A, %B %-d, %Y at %-I:%M %p {abbrev}")
+
+
+class _NoopLedger:
+    """No-op ledger used when email_ledger module is unavailable. Disables
+    the cross-session dup safety net but keeps the cron functional. The
+    primary dup defense (last_digest_sent_at on the Airtable row) still
+    works.
+    """
+
+    def check_duplicate(self, recipient, subject, hours=6):
+        return None
+
+    def log_send(self, **kw):
+        return 0
 
 
 def _acquire_lock(path: Path = DEFAULT_LOCK_PATH):
@@ -187,12 +238,14 @@ def _run_briefing(
 
     if result.sent:
         max_cursor = max((p.created_at for p in profiles), default=cursor or "")
-        airtable.update_after_send(
-            row, sent_at=now, attendee_cursor=max_cursor, attendee_count=len(profiles)
-        )
         if is_initial:
-            airtable.mark_initial_briefing_sent(row, at=now)
-            airtable.clear_initial_briefing_request(row)
+            airtable.update_after_initial_send(
+                row, sent_at=now, attendee_cursor=max_cursor, attendee_count=len(profiles)
+            )
+        else:
+            airtable.update_after_send(
+                row, sent_at=now, attendee_cursor=max_cursor, attendee_count=len(profiles)
+            )
 
 
 def main(dry_run: bool = False) -> None:
@@ -204,17 +257,30 @@ def main(dry_run: bool = False) -> None:
         crm = CrmLookup(cfg.dashboard_api_base, cfg.dashboard_api_key)
         llm = LLMRunner(cfg.gemini_bin, cfg.codex_bin, cfg.codex_model)
 
-        sys.path.insert(
-            0, str(Path.home() / "projects" / "houseofjawn-bot" / "scheduler")
+        ledger_path = os.environ.get(
+            "DIGEST_LEDGER_PATH",
+            str(Path.home() / "projects" / "houseofjawn-bot" / "scheduler"),
         )
-        from email_ledger import check_duplicate, log_send  # type: ignore
+        sys.path.insert(0, ledger_path)
+        try:
+            from email_ledger import check_duplicate, log_send  # type: ignore
 
-        class _LedgerWrapper:
-            def check_duplicate(self, recipient, subject, hours=6):
-                return check_duplicate(recipient, subject, hours=hours)
+            class _LedgerWrapper:
+                def check_duplicate(self, recipient, subject, hours=6):
+                    return check_duplicate(recipient, subject, hours=hours)
 
-            def log_send(self, **kw):
-                return log_send(**kw)
+                def log_send(self, **kw):
+                    return log_send(**kw)
+
+            ledger = _LedgerWrapper()
+        except ImportError as e:
+            logger.warning(
+                "email_ledger missing at %s (%s); falling back to no-op ledger. "
+                "Duplicate-send protection from this safety net is DISABLED. "
+                "Override path with DIGEST_LEDGER_PATH env.",
+                ledger_path, e,
+            )
+            ledger = _NoopLedger()
 
         sender = SendEngine(
             smtp_host=cfg.smtp_host,
@@ -224,7 +290,7 @@ def main(dry_run: bool = False) -> None:
             from_name=cfg.smtp_from_name,
             from_email=cfg.smtp_from_email,
             bcc_always=cfg.bcc_always,
-            ledger=_LedgerWrapper(),
+            ledger=ledger,
         )
         renderer = EmailRenderer()
 

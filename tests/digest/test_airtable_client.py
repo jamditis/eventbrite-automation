@@ -108,6 +108,30 @@ def test_record_error_truncates_long_messages(mock_pyairtable):
     assert len(written) == 1000
 
 
+def test_update_after_initial_send_writes_all_six_fields_in_one_call(mock_pyairtable):
+    """The initial-briefing path must be atomic: cursor + count + sent_at +
+    initial_briefing_sent_at + clear-requested + clear-error in ONE Airtable
+    call so a partial failure can't leave the row looking like a pending
+    initial briefing while SMTP already went out.
+    """
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    rows = client.list_enabled()
+    client.update_after_initial_send(
+        rows[0],
+        sent_at=datetime(2026, 5, 8, 11, 0, tzinfo=UTC),
+        attendee_cursor="2026-05-07T20:00:00Z",
+        attendee_count=12,
+    )
+    assert len(mock_pyairtable.update_calls) == 1
+    fields = mock_pyairtable.update_calls[0]["fields"]
+    assert fields["Last digest sent at"] == "2026-05-08T11:00:00+00:00"
+    assert fields["Last attendee cursor"] == "2026-05-07T20:00:00Z"
+    assert fields["Last digest attendee count"] == 12
+    assert fields["Initial briefing sent at"] == "2026-05-08T11:00:00+00:00"
+    assert fields["Initial briefing requested at"] is None
+    assert fields["Last error"] == ""
+
+
 def test_mark_initial_briefing_sent(mock_pyairtable):
     client = AirtableClient(pat="pat", base_id="base", table_name="Events")
     rows = client.list_enabled()

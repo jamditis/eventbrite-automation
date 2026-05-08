@@ -101,9 +101,10 @@ def test_e2e_initial_briefing_sends_to_speakers_with_all_attendees():
     assert "Marcus Chen" in kw["html_body"]
     assert kw["slug"] == "test-event"
 
-    airtable.update_after_send.assert_called_once()
-    airtable.mark_initial_briefing_sent.assert_called_once()
-    airtable.clear_initial_briefing_request.assert_called_once()
+    airtable.update_after_initial_send.assert_called_once()
+    airtable.update_after_send.assert_not_called()
+    airtable.mark_initial_briefing_sent.assert_not_called()
+    airtable.clear_initial_briefing_request.assert_not_called()
 
 
 def test_e2e_daily_digest_silent_when_no_new_attendees():
@@ -140,8 +141,10 @@ def test_e2e_daily_digest_silent_when_no_new_attendees():
 
 
 def test_e2e_daily_digest_with_new_attendees_sends_only_new_in_new_section():
-    """Cursor-based diff: attendees created after cursor are 'new', the rest
-    appear in the 'already registered' section without Q&A."""
+    """Cursor-based diff: attendees created after cursor render in the 'new
+    registrants' section with full Q&A; attendees on/before cursor render in
+    the 'already registered' section as name+org only.
+    """
     eb = MagicMock()
     eb.fetch_attendees.return_value = [
         _attendee("100001", "old1@x.com", "Old One", "2026-05-05T10:00:00Z"),
@@ -176,10 +179,18 @@ def test_e2e_daily_digest_with_new_attendees_sends_only_new_in_new_section():
 
     sender.send.assert_called_once()
     body = sender.send.call_args.kwargs["html_body"]
-    assert "New One" in body
-    assert "New Two" in body
-    assert "Old One" in body
-    assert "Old Two" in body
+
+    # Section-bounded assertion: new attendees ONLY appear in the
+    # "New registrants" section; old attendees ONLY in "Already registered".
+    new_section_start = body.index("New registrants")
+    existing_section_start = body.index("Already registered")
+    new_section = body[new_section_start:existing_section_start]
+    existing_section = body[existing_section_start:]
+
+    assert "New One" in new_section and "New One" not in existing_section
+    assert "New Two" in new_section and "New Two" not in existing_section
+    assert "Old One" in existing_section and "Old One" not in new_section
+    assert "Old Two" in existing_section and "Old Two" not in new_section
 
     # The cursor advances past the latest attendee
     update_kwargs = airtable.update_after_send.call_args.kwargs
