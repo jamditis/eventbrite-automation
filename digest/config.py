@@ -1,8 +1,20 @@
-"""Env-driven config. Required keys must be set or load_config raises ConfigError."""
+"""Env-driven config. Required keys must be set or load_config raises ConfigError.
+
+Loads `.env` at module import via python-dotenv, matching the existing
+webhook-side `config.py` in this repo. systemd reads `.env` directly via
+`EnvironmentFile=`, so the cron path doesn't need this — but the manual
+operator commands documented in the runbook (e.g. `venv/bin/python -m
+digest.cron --dry-run`) run from the repo root and silently fail
+without it.
+"""
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 class ConfigError(RuntimeError):

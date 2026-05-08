@@ -226,3 +226,131 @@ def test_e2e_dry_run_renders_but_skips_send_and_state_write():
     sender.send.assert_not_called()
     airtable.update_after_send.assert_not_called()
     airtable.mark_initial_briefing_sent.assert_not_called()
+
+
+def test_e2e_empty_speaker_emails_aborts_send_and_records_error():
+    """A row with no speaker_emails would otherwise mail only the always-BCC
+    addresses while marking Airtable as sent — a delivery + privacy bug.
+    Refuse to send, record `Last error`, leave sent_at unset so a fix to the
+    row can recover on the next tick."""
+    eb = MagicMock()
+    crm = MagicMock()
+    llm = MagicMock()
+    sender = MagicMock()
+    airtable = MagicMock()
+    renderer = EmailRenderer()
+    now = datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
+    row = _row(speaker_emails=[])
+
+    _run_briefing(
+        row, eb, crm, llm, renderer, sender, airtable, now,
+        is_initial=True, dry_run=False,
+    )
+
+    sender.send.assert_not_called()
+    airtable.update_after_send.assert_not_called()
+    airtable.update_after_initial_send.assert_not_called()
+    airtable.record_error.assert_called_once()
+    err_msg = airtable.record_error.call_args.args[1]
+    assert "speaker_emails" in err_msg.lower() or "speaker emails" in err_msg.lower()
+
+
+def test_e2e_empty_lead_host_email_aborts_send_and_records_error():
+    """Lead host email is the Reply-To and the ledger key. Empty value
+    breaks both — refuse to send and record the error."""
+    eb = MagicMock()
+    crm = MagicMock()
+    llm = MagicMock()
+    sender = MagicMock()
+    airtable = MagicMock()
+    renderer = EmailRenderer()
+    now = datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
+    row = _row(lead_host_email="")
+
+    _run_briefing(
+        row, eb, crm, llm, renderer, sender, airtable, now,
+        is_initial=True, dry_run=False,
+    )
+
+    sender.send.assert_not_called()
+    airtable.record_error.assert_called_once()
+    err_msg = airtable.record_error.call_args.args[1]
+    assert "lead_host_email" in err_msg.lower() or "lead host" in err_msg.lower()
+
+
+def test_e2e_ledger_duplicate_reconciles_airtable_state_for_daily():
+    """If SMTP succeeded on a prior tick but the Airtable state write failed,
+    the next tick hits a ledger duplicate. Treat the duplicate as authoritative
+    proof the email left SMTP and reconcile Airtable — same state writes as a
+    successful send. Without this, last_digest_sent_at + cursor stay stale
+    until the 20h ledger window ages out, then the cron re-sends with the
+    old cursor."""
+    eb = MagicMock()
+    eb.fetch_attendees.return_value = [
+        _attendee("100001", "old@x.com", "Old One", "2026-05-05T10:00:00Z"),
+        _attendee("100002", "new@x.com", "New One", "2026-05-12T10:00:00Z"),
+    ]
+    eb.fetch_event.return_value = EventbriteEvent(
+        id="EVT-1", title="x",
+        start_local="2026-05-15T13:00:00", timezone="America/New_York",
+    )
+    crm = MagicMock()
+    crm.find_by_email.return_value = None
+    llm = MagicMock()
+    llm.run_blurb.return_value = None
+
+    sender = MagicMock()
+    sender.send.return_value = SendResult(sent=False, reason="duplicate")
+
+    airtable = MagicMock()
+    renderer = EmailRenderer()
+    now = datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
+    row = _row(
+        last_attendee_cursor="2026-05-10T00:00:00Z",
+        initial_briefing_sent_at="2026-05-08T11:00:00+00:00",
+    )
+
+    _run_briefing(
+        row, eb, crm, llm, renderer, sender, airtable, now,
+        is_initial=False, dry_run=False,
+    )
+
+    sender.send.assert_called_once()
+    airtable.update_after_send.assert_called_once()
+    kw = airtable.update_after_send.call_args.kwargs
+    assert kw["sent_at"] == now
+    assert kw["attendee_cursor"] == "2026-05-12T10:00:00Z"
+    assert kw["attendee_count"] == 2
+
+
+def test_e2e_ledger_duplicate_reconciles_airtable_state_for_initial():
+    """Same reconciliation logic on the initial-briefing path."""
+    eb = MagicMock()
+    eb.fetch_attendees.return_value = [
+        _attendee("100001", "a@x.com", "Alice", "2026-05-01T10:00:00Z"),
+    ]
+    eb.fetch_event.return_value = EventbriteEvent(
+        id="EVT-1", title="x",
+        start_local="2026-05-15T13:00:00", timezone="America/New_York",
+    )
+    crm = MagicMock()
+    crm.find_by_email.return_value = None
+    llm = MagicMock()
+    llm.run_blurb.return_value = None
+
+    sender = MagicMock()
+    sender.send.return_value = SendResult(sent=False, reason="duplicate")
+
+    airtable = MagicMock()
+    renderer = EmailRenderer()
+    now = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+
+    _run_briefing(
+        _row(),
+        eb, crm, llm, renderer, sender, airtable, now,
+        is_initial=True, dry_run=False,
+    )
+
+    sender.send.assert_called_once()
+    airtable.update_after_initial_send.assert_called_once()
+    airtable.update_after_send.assert_not_called()

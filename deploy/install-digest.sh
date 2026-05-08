@@ -46,10 +46,12 @@ fi
 
 sudo install -m 644 "$REPO/deploy/digest-cron.service" /etc/systemd/system/
 sudo install -m 644 "$REPO/deploy/digest-cron.timer" /etc/systemd/system/
-sudo install -m 644 "$REPO/deploy/digest-cron.logrotate" /etc/logrotate.d/digest-cron
 
-sudo touch /var/log/digest-cron.log
-sudo chown jamditis:jamditis /var/log/digest-cron.log
+# The cron logs to journald only (no StandardOutput= directive in the unit).
+# `journalctl -u digest-cron.service` is the canonical log surface; journald
+# handles its own rotation. If a prior install of this script created
+# /var/log/digest-cron.log + a logrotate rule, leave them in place — they
+# do no harm. The lines below were intentionally removed in the fold-in.
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now digest-cron.timer

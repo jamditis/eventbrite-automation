@@ -177,6 +177,25 @@ def _run_briefing(
     dry_run: bool,
 ) -> None:
     logger.info("processing %s (initial=%s)", row.slug, is_initial)
+
+    # Recipient-validity gate: a row missing speaker_emails or lead_host_email
+    # must not reach SMTP. Without this guard, an empty `to` list still
+    # produces a deliverable message via the always-BCC addresses, and the
+    # success path would then mark Airtable as sent — speakers receive
+    # nothing while ops sees green.
+    if not row.speaker_emails:
+        msg = f"speaker_emails empty for row {row.record_id}; refusing to send digest"
+        logger.error(msg)
+        if not dry_run:
+            airtable.record_error(row, msg)
+        return
+    if not row.lead_host_email:
+        msg = f"lead_host_email empty for row {row.record_id}; refusing to send digest"
+        logger.error(msg)
+        if not dry_run:
+            airtable.record_error(row, msg)
+        return
+
     builder = ProfileBuilder(crm, llm, question_id_filter=row.question_ids_to_include or None)
 
     attendees = list(eb.fetch_attendees(row.eventbrite_event_id))
@@ -236,7 +255,18 @@ def _run_briefing(
         session_type="cron",
     )
 
-    if result.sent:
+    # The ledger is canonical for "did email leave SMTP" — log_send fires
+    # immediately after smtp.send_message succeeds. So a `duplicate` reason
+    # means the email DID go out on a prior tick, just that the Airtable
+    # state write didn't follow. Reconcile Airtable now using the same
+    # write path as a successful send. Without this branch, stale Airtable
+    # state survives until the 20h ledger window ages out, after which the
+    # cron would re-send with the old cursor.
+    if result.sent or result.reason == "duplicate":
+        if not result.sent:
+            logger.warning(
+                "ledger duplicate for %s; reconciling Airtable state", row.slug
+            )
         max_cursor = max((p.created_at for p in profiles), default=cursor or "")
         if is_initial:
             airtable.update_after_initial_send(
