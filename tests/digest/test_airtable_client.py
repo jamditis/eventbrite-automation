@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from digest.airtable_client import AirtableClient, EventRow
+from digest.airtable_client import AirtableClient, EventRow, EventRowSchemaError
 
 FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "airtable_event_row.json").read_text()
@@ -116,6 +116,24 @@ def test_mark_initial_briefing_sent(mock_pyairtable):
     )
     fields = mock_pyairtable.update_calls[-1]["fields"]
     assert fields["Initial briefing sent at"] == "2026-05-08T11:00:00+00:00"
+
+
+def test_from_airtable_raises_schema_error_on_bad_int(mock_pyairtable):
+    """Non-coercible 'Days out to start' must surface the record_id, not crash
+    on a generic ValueError that hides which row to fix.
+    """
+    mock_pyairtable.records[0]["fields"]["Days out to start"] = "seven"
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    with pytest.raises(EventRowSchemaError, match=r"recABC123.*Days out to start"):
+        client.list_enabled()
+
+
+def test_from_airtable_handles_none_for_optional_int(mock_pyairtable):
+    """None / empty string falls back to the default rather than raising."""
+    mock_pyairtable.records[0]["fields"]["Last digest attendee count"] = None
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    row = client.list_enabled()[0]
+    assert row.last_digest_attendee_count == 0
 
 
 def test_clear_initial_briefing_request(mock_pyairtable):

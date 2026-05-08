@@ -35,6 +35,17 @@ def test_load_config_defaults(env):
     assert cfg.gemini_bin == "gemini"
 
 
+def test_load_config_raises_config_error_on_invalid_smtp_port(env):
+    env.setenv("EVENTBRITE_PRIVATE_TOKEN", "x")
+    env.setenv("AIRTABLE_PAT", "x")
+    env.setenv("AIRTABLE_BASE_ID", "x")
+    env.setenv("DASHBOARD_API_KEY", "x")
+    env.setenv("SMTP_PASSWORD", "x")
+    env.setenv("SMTP_PORT", "abc")
+    with pytest.raises(ConfigError, match="SMTP_PORT"):
+        load_config()
+
+
 def test_load_config_parses_bcc_list(env):
     env.setenv("EVENTBRITE_PRIVATE_TOKEN", "x")
     env.setenv("AIRTABLE_PAT", "x")

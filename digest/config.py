@@ -50,6 +50,12 @@ def load_config() -> Config:
     )
     bcc_always = tuple(addr.strip() for addr in bcc_raw.split(",") if addr.strip())
 
+    smtp_port_raw = os.environ.get("SMTP_PORT", "465")
+    try:
+        smtp_port = int(smtp_port_raw)
+    except ValueError as e:
+        raise ConfigError(f"SMTP_PORT must be an integer; got {smtp_port_raw!r}") from e
+
     return Config(
         eventbrite_token=os.environ["EVENTBRITE_PRIVATE_TOKEN"],
         airtable_pat=os.environ["AIRTABLE_PAT"],
@@ -60,7 +66,7 @@ def load_config() -> Config:
         ),
         dashboard_api_key=os.environ["DASHBOARD_API_KEY"],
         smtp_host=os.environ.get("SMTP_HOST", "smtp.gmail.com"),
-        smtp_port=int(os.environ.get("SMTP_PORT", "465")),
+        smtp_port=smtp_port,
         smtp_user=os.environ.get("SMTP_USER", "njnewscommons@gmail.com"),
         smtp_password=os.environ["SMTP_PASSWORD"],
         smtp_from_name=os.environ.get(

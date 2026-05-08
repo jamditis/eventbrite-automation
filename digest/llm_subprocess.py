@@ -60,10 +60,28 @@ def validate_one_liner(s: str) -> str:
     return s
 
 
+_PROVIDER_AUTH_VARS = (
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "OPENAI_PROJECT",
+    "OPENAI_ORG_ID",
+    "OPENAI_ORGANIZATION",
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_BASE_URL",
+    "GOOGLE_API_KEY",
+    "GEMINI_API_KEY",
+)
+
+
 def _clean_env() -> dict[str, str]:
-    """Subprocess env with LLM API keys removed to force OAuth-only billing."""
+    """Subprocess env with all known provider auth vars removed to force OAuth-only billing.
+
+    Blacklist is maintained against the set of vars each CLI honors. Add new
+    vars here when a provider ships a new auth alias; the regression test in
+    test_llm_subprocess covers the full set.
+    """
     env = os.environ.copy()
-    for key in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY"):
+    for key in _PROVIDER_AUTH_VARS:
         env.pop(key, None)
     return env
 

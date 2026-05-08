@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import pytest
+import requests
 
 from digest.crm_lookup import CrmContact, CrmLookup
 
@@ -78,13 +79,46 @@ def test_lookup_handles_alt_email(mock_get):
     assert crm.find_by_email("joe@alt.com") is not None
 
 
-def test_lookup_returns_none_on_network_error(monkeypatch):
+def test_lookup_returns_none_on_transport_error(monkeypatch):
+    """ConnectionError / Timeout / HTTPError are graceful degradation."""
+
     def fake_get(*a, **kw):
-        raise RuntimeError("boom")
+        raise requests.ConnectionError("DNS failure")
 
     monkeypatch.setattr("digest.crm_lookup.requests.get", fake_get)
     crm = CrmLookup(api_base="http://x/api", api_key="k")
     assert crm.find_by_email("any@example.com") is None
+
+
+def test_lookup_returns_none_on_malformed_json(monkeypatch):
+    """200 OK with garbage body -> degrade. Dashboard up but speaking nonsense."""
+
+    class _BadJsonResp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            raise ValueError("Expecting value: line 1 column 1")
+
+    monkeypatch.setattr("digest.crm_lookup.requests.get", lambda *a, **kw: _BadJsonResp())
+    crm = CrmLookup(api_base="http://x/api", api_key="k")
+    assert crm.find_by_email("any@example.com") is None
+
+
+def test_lookup_propagates_unexpected_exception(monkeypatch):
+    """Programming bugs (KeyError, TypeError on payload) must raise, not hide
+    as 'no CRM match' — that masks real dashboard regressions.
+    """
+
+    def fake_get(*a, **kw):
+        raise RuntimeError("internal data structure corrupt")
+
+    monkeypatch.setattr("digest.crm_lookup.requests.get", fake_get)
+    crm = CrmLookup(api_base="http://x/api", api_key="k")
+    with pytest.raises(RuntimeError, match="corrupt"):
+        crm.find_by_email("any@example.com")
 
 
 def test_lookup_sends_api_key_header(mock_get):

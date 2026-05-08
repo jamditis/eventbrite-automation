@@ -1,4 +1,12 @@
-"""Eventbrite v3 API client. Scoped to attendee + event reads for the digest."""
+"""Eventbrite v3 API client. Scoped to attendee + event reads for the digest.
+
+EventbriteAttendee.email is normalized to lowercase at construction time so
+downstream consumers (CrmLookup, blurb hashing, BCC dedup) can compare emails
+without each having to remember to .lower(). Producer-side normalization vs.
+"every consumer must remember" — producer-side wins because consumers
+forget, and a mixed-case email leaking into the wrong place reads as a
+silent miss in production.
+"""
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -7,6 +15,10 @@ from dataclasses import dataclass, field
 import requests
 
 API_BASE = "https://www.eventbriteapi.com/v3"
+
+
+class EventbritePaginationError(RuntimeError):
+    """Raised when the API claims more pages but doesn't tell us how to fetch them."""
 
 
 @dataclass(frozen=True)
@@ -36,7 +48,7 @@ class EventbriteAttendee:
             refunded=bool(payload.get("refunded", False)),
             first_name=first,
             last_name=last,
-            email=profile.get("email", "") or "",
+            email=(profile.get("email") or "").lower(),
             name=name,
             answers=list(payload.get("answers") or []),
         )
@@ -68,7 +80,12 @@ class EventbriteClient:
         return {"Authorization": f"Bearer {self._token}"}
 
     def fetch_attendees(self, event_id: str) -> Iterator[EventbriteAttendee]:
-        """Walk every page of the EB attendees endpoint; yields cancelled too."""
+        """Walk every page of the EB attendees endpoint; yields cancelled too.
+
+        Raises EventbritePaginationError if the API says there are more pages
+        but doesn't return a continuation token. Silently truncating would mean
+        the digest could ship missing the most recent registrants.
+        """
         url = f"{API_BASE}/events/{event_id}/attendees/"
         params: dict = {}
         while True:
@@ -84,7 +101,9 @@ class EventbriteClient:
                 return
             continuation = pag.get("continuation")
             if not continuation:
-                return
+                raise EventbritePaginationError(
+                    f"event {event_id}: has_more_items=true with no continuation token"
+                )
             params = {"continuation": continuation}
 
     def fetch_event(self, event_id: str) -> EventbriteEvent:

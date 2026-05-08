@@ -3,8 +3,14 @@
 The dashboard's contacts search uses LIKE matching, so a query for
 sarah@northjersey could substring-match sarah@othersite. We post-filter
 on exact email so a wrong-attribution blurb never reaches an email render.
-Network errors degrade to None so the digest can still ship form-data
-blurbs when the dashboard is briefly unreachable.
+
+Failure-mode policy (deliberate per codex review 2026-05-08):
+  - Transport errors (DNS, refused, timeout, 5xx) -> None (graceful degrade).
+  - Malformed JSON body -> None (degrade — the dashboard is up but speaking
+    nonsense; better to ship form-only blurbs than crash the cron).
+  - Schema/programming bugs (KeyError, TypeError on payload structure) ->
+    raise. These are real defects that should fail loud, not hide as
+    "no CRM match."
 """
 from __future__ import annotations
 
@@ -61,9 +67,13 @@ class CrmLookup:
                 timeout=self._timeout,
             )
             resp.raise_for_status()
+        except requests.RequestException as e:
+            logger.warning("CRM transport error for %s: %s", email_lower, e)
+            return None
+        try:
             payload = resp.json()
-        except Exception as e:
-            logger.warning("CRM lookup failed for %s: %s", email_lower, e)
+        except ValueError as e:
+            logger.warning("CRM returned non-JSON for %s: %s", email_lower, e)
             return None
 
         for item in payload.get("items") or []:

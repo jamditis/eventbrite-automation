@@ -3,7 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from digest.eventbrite_client import EventbriteAttendee, EventbriteClient
+from digest.eventbrite_client import (
+    EventbriteAttendee,
+    EventbriteClient,
+    EventbritePaginationError,
+)
 
 FIXTURE = json.loads(
     (Path(__file__).parent / "fixtures" / "eb_attendees_sample.json").read_text()
@@ -76,6 +80,63 @@ def test_attendee_dataclass_exposes_form_answers(mock_responses):
     assert len(sarah.answers) == 1
     assert sarah.answers[0]["question_id"] == "q_1"
     assert "AI workflows" in sarah.answers[0]["answer"]
+
+
+def test_fetch_attendees_raises_on_truncated_pagination(monkeypatch):
+    """has_more_items=true with no continuation token must raise, not silently
+    truncate. Silent truncation would mean the digest ships missing the most
+    recent registrants — a category of failure that's invisible until a speaker
+    notices someone obviously missing.
+    """
+    truncated = {
+        "pagination": {
+            "page_number": 1,
+            "has_more_items": True,
+            "continuation": None,
+        },
+        "attendees": [],
+    }
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        return _MockResponse(200, truncated)
+
+    monkeypatch.setattr("digest.eventbrite_client.requests.get", fake_get)
+    client = EventbriteClient(token="tok123")
+    with pytest.raises(EventbritePaginationError, match="has_more_items"):
+        list(client.fetch_attendees(event_id="EVT-1"))
+
+
+def test_attendee_email_is_lowercased_at_construction(monkeypatch):
+    """Producer-side normalization: downstream consumers (CRM lookup, BCC dedup,
+    blurb hashing) get canonical lowercase without remembering to .lower().
+    """
+    payload = {
+        "pagination": {"has_more_items": False, "continuation": None},
+        "attendees": [
+            {
+                "id": "X1",
+                "created": "2026-05-01T00:00:00Z",
+                "status": "Attending",
+                "cancelled": False,
+                "refunded": False,
+                "profile": {
+                    "first_name": "Mixed",
+                    "last_name": "Case",
+                    "email": "Mixed.Case@Example.COM",
+                    "name": "Mixed Case",
+                },
+                "answers": [],
+            }
+        ],
+    }
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        return _MockResponse(200, payload)
+
+    monkeypatch.setattr("digest.eventbrite_client.requests.get", fake_get)
+    client = EventbriteClient(token="tok123")
+    attendee = next(client.fetch_attendees(event_id="EVT-1"))
+    assert attendee.email == "mixed.case@example.com"
 
 
 def test_fetch_event_returns_event_metadata(monkeypatch):

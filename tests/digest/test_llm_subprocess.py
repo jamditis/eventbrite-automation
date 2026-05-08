@@ -95,9 +95,11 @@ def test_runner_falls_back_when_gemini_returns_invalid(monkeypatch):
     assert runner.run_blurb("x") == "Sarah is an editor."
 
 
-def test_runner_scrubs_llm_api_keys_from_subprocess_env(monkeypatch):
-    """Defense-in-depth: even if OPENAI_API_KEY is exported, codex CLI
-    must not see it. Forces OAuth (chatgpt) auth at zero marginal cost.
+def test_runner_scrubs_all_provider_auth_vars_from_subprocess_env(monkeypatch):
+    """Defense-in-depth: any exported provider auth var (across OpenAI / Anthropic /
+    Google aliases) must not leak into the codex/gemini subprocess. Forces OAuth
+    (chatgpt / gemini Pro) auth at zero marginal cost. If a CLI ships a new
+    auth alias, add it to _PROVIDER_AUTH_VARS and extend this assertion.
     """
     captured = {}
 
@@ -105,13 +107,24 @@ def test_runner_scrubs_llm_api_keys_from_subprocess_env(monkeypatch):
         captured.update(kw.get("env") or {})
         return MagicMock(stdout="Sarah is an editor.\n", stderr="", returncode=0)
 
-    monkeypatch.setenv("OPENAI_API_KEY", "should-not-leak")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", "should-not-leak")
+    leaked = {
+        "OPENAI_API_KEY": "leak1",
+        "OPENAI_BASE_URL": "https://leak.example",
+        "OPENAI_PROJECT": "proj-leak",
+        "OPENAI_ORG_ID": "org-leak",
+        "OPENAI_ORGANIZATION": "org-leak2",
+        "ANTHROPIC_API_KEY": "leak2",
+        "ANTHROPIC_BASE_URL": "https://leak2.example",
+        "GOOGLE_API_KEY": "leak3",
+        "GEMINI_API_KEY": "leak4",
+    }
+    for key, val in leaked.items():
+        monkeypatch.setenv(key, val)
     monkeypatch.setattr("digest.llm_subprocess.subprocess.run", fake_run)
     runner = LLMRunner(gemini_bin="g", codex_bin="c", codex_model="x")
     runner.run_blurb("test")
-    assert "OPENAI_API_KEY" not in captured
-    assert "ANTHROPIC_API_KEY" not in captured
+    for key in leaked:
+        assert key not in captured, f"{key} leaked into subprocess env"
 
 
 def test_runner_handles_missing_binary(monkeypatch):
