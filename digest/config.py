@@ -79,13 +79,13 @@ def load_config() -> Config:
         dashboard_api_key=os.environ["DASHBOARD_API_KEY"],
         smtp_host=os.environ.get("SMTP_HOST", "smtp.gmail.com"),
         smtp_port=smtp_port,
-        smtp_user=os.environ.get("SMTP_USER", "njnewscommons@gmail.com"),
+        smtp_user=os.environ.get("SMTP_USER", "sender@example.com"),
         smtp_password=os.environ["SMTP_PASSWORD"],
         smtp_from_name=os.environ.get(
             "SMTP_FROM_NAME", "Center for Cooperative Media"
         ),
         smtp_from_email=os.environ.get(
-            "SMTP_FROM_EMAIL", "njnewscommons@gmail.com"
+            "SMTP_FROM_EMAIL", "sender@example.com"
         ),
         bcc_always=bcc_always,
         gemini_bin=os.environ.get("GEMINI_BIN", "gemini"),
