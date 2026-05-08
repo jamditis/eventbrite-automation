@@ -137,6 +137,20 @@ class AirtableClient:
         records = self._table.all(formula="{Enabled} = TRUE()")
         return [EventRow.from_airtable(r) for r in records]
 
+    def list_active(self) -> list[EventRow]:
+        """Rows the cron should consider this tick: enabled OR with a pending
+        initial briefing. The latter is included regardless of `Enabled` so
+        a staff-requested briefing on a not-yet-enabled draft event still
+        fires — the alternative (silent never-fire) is the worst kind of
+        trap because the request looks active but nothing happens.
+        """
+        formula = (
+            "OR({Enabled} = TRUE(), "
+            "AND({Initial briefing requested at}, NOT({Initial briefing sent at})))"
+        )
+        records = self._table.all(formula=formula)
+        return [EventRow.from_airtable(r) for r in records]
+
     def list_all(self) -> list[EventRow]:
         return [EventRow.from_airtable(r) for r in self._table.all()]
 

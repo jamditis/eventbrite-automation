@@ -295,8 +295,8 @@ def main(dry_run: bool = False) -> None:
         renderer = EmailRenderer()
 
         now = datetime.now(UTC)
-        rows = airtable.list_enabled()
-        logger.info("tick: %d enabled rows, now=%s", len(rows), now.isoformat())
+        rows = airtable.list_active()
+        logger.info("tick: %d active rows, now=%s", len(rows), now.isoformat())
 
         for row in rows:
             try:
@@ -305,7 +305,7 @@ def main(dry_run: bool = False) -> None:
                         row, eb, crm, llm, renderer, sender, airtable, now,
                         is_initial=True, dry_run=dry_run,
                     )
-                elif should_send_today(row, now):
+                elif row.enabled and should_send_today(row, now):
                     _run_briefing(
                         row, eb, crm, llm, renderer, sender, airtable, now,
                         is_initial=False, dry_run=dry_run,

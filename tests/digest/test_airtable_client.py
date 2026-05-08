@@ -47,6 +47,53 @@ def mock_pyairtable(monkeypatch):
     return table
 
 
+def test_list_active_includes_disabled_with_pending_initial_briefing(mock_pyairtable):
+    """A disabled row with a pending initial briefing must surface to the cron
+    so the staff-requested briefing still fires. The original list_enabled()
+    skips it, leaving the request silently abandoned."""
+
+    class _FormulaTrackingTable:
+        def __init__(self):
+            self.last_formula = None
+            self.records = mock_pyairtable.records
+
+        def all(self, formula=None, **kw):
+            self.last_formula = formula
+            return self.records
+
+        def update(self, *a, **kw):
+            return mock_pyairtable.update(*a, **kw)
+
+    tracker = _FormulaTrackingTable()
+    mock_pyairtable.records[0]["fields"]["Enabled"] = False
+    mock_pyairtable.records[0]["fields"]["Initial briefing requested at"] = "2026-05-08T11:00:00+00:00"
+    mock_pyairtable.records[0]["fields"]["Initial briefing sent at"] = None
+
+    import digest.airtable_client as ac
+
+    class _FakeApi:
+        def __init__(self, *a, **kw):
+            pass
+
+        def table(self, base_id, table_name):
+            return tracker
+
+    original_api = ac.Api
+    ac.Api = _FakeApi
+    try:
+        client = ac.AirtableClient(pat="pat", base_id="base", table_name="Events")
+        rows = client.list_active()
+        assert tracker.last_formula is not None
+        assert "Enabled" in tracker.last_formula
+        assert "Initial briefing requested at" in tracker.last_formula
+        assert "Initial briefing sent at" in tracker.last_formula
+        assert len(rows) == 1
+        assert rows[0].enabled is False
+        assert rows[0].initial_briefing_requested_at == "2026-05-08T11:00:00+00:00"
+    finally:
+        ac.Api = original_api
+
+
 def test_list_enabled_returns_event_rows(mock_pyairtable):
     client = AirtableClient(pat="pat", base_id="base", table_name="Events")
     rows = client.list_enabled()
