@@ -245,11 +245,11 @@ The renderer doesn't know whether a blurb came from gemini or from the determini
 
 | Header | Value |
 |---|---|
-| From | `Center for Cooperative Media <njnewscommons@gmail.com>` |
+| From | `Center for Cooperative Media <sender@example.com>` |
 | To | comma-joined `Speaker emails` from Airtable row |
 | Reply-To | `Lead host email` from Airtable row |
 | Bcc | `jamditis@gmail.com, etiennec@montclair.edu` |
-| List-Unsubscribe | `mailto:njnewscommons@gmail.com?subject=unsubscribe%20{slug}` |
+| List-Unsubscribe | `mailto:sender@example.com?subject=unsubscribe%20{slug}` |
 
 SMTP: `gmail-app-password` from pass (njnewscommons app password). Standard `smtplib.SMTP_SSL("smtp.gmail.com", 465)`.
 

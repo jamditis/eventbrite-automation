@@ -266,10 +266,10 @@ DASHBOARD_API_KEY=                 # `pass show claude/tokens/dashboard-api`
 # SMTP (njnewscommons)
 SMTP_HOST=smtp.gmail.com
 SMTP_PORT=465
-SMTP_USER=njnewscommons@gmail.com
+SMTP_USER=sender@example.com
 SMTP_PASSWORD=                     # `pass show gmail-app-password`
 SMTP_FROM_NAME=Center for Cooperative Media
-SMTP_FROM_EMAIL=njnewscommons@gmail.com
+SMTP_FROM_EMAIL=sender@example.com
 
 # Always-BCC
 BCC_ALWAYS=jamditis@gmail.com,etiennec@montclair.edu
@@ -528,13 +528,13 @@ def load_config() -> Config:
         dashboard_api_key=os.environ["DASHBOARD_API_KEY"],
         smtp_host=os.environ.get("SMTP_HOST", "smtp.gmail.com"),
         smtp_port=int(os.environ.get("SMTP_PORT", "465")),
-        smtp_user=os.environ.get("SMTP_USER", "njnewscommons@gmail.com"),
+        smtp_user=os.environ.get("SMTP_USER", "sender@example.com"),
         smtp_password=os.environ["SMTP_PASSWORD"],
         smtp_from_name=os.environ.get(
             "SMTP_FROM_NAME", "Center for Cooperative Media"
         ),
         smtp_from_email=os.environ.get(
-            "SMTP_FROM_EMAIL", "njnewscommons@gmail.com"
+            "SMTP_FROM_EMAIL", "sender@example.com"
         ),
         bcc_always=tuple(addr.strip() for addr in bcc.split(",") if addr.strip()),
         gemini_bin=os.environ.get("GEMINI_BIN", "gemini"),
@@ -1968,7 +1968,7 @@ git push
       Manage this digest: <a href="{{ admin_url }}" style="color: #0066cc;">{{ admin_url }}</a>
     </p>
     <p style="font-size: 12px; color: #999; margin: 0;">
-      Sent by the Center for Cooperative Media · njnewscommons@gmail.com
+      Sent by the Center for Cooperative Media · sender@example.com
     </p>
 
   </div>
@@ -2220,8 +2220,8 @@ def ledger_mock():
 def test_send_calls_smtp_with_correct_envelope(smtp_mock, ledger_mock):
     engine = SendEngine(
         smtp_host="smtp.x", smtp_port=465,
-        smtp_user="njnewscommons@gmail.com", smtp_password="x",
-        from_name="CCM", from_email="njnewscommons@gmail.com",
+        smtp_user="sender@example.com", smtp_password="x",
+        from_name="CCM", from_email="sender@example.com",
         bcc_always=("joe@example.com", "cassandra@example.com"),
         ledger=ledger_mock,
     )
@@ -2239,7 +2239,7 @@ def test_send_calls_smtp_with_correct_envelope(smtp_mock, ledger_mock):
     assert smtp_mock[0]["msg"]["Reply-To"] == "host@example.com"
     assert smtp_mock[0]["msg"]["Subject"] == "Test"
     assert smtp_mock[0]["msg"]["Bcc"] == "joe@example.com, cassandra@example.com"
-    assert smtp_mock[0]["msg"]["From"] == "CCM <njnewscommons@gmail.com>"
+    assert smtp_mock[0]["msg"]["From"] == "CCM <sender@example.com>"
 
 
 def test_aborts_when_ledger_says_duplicate(smtp_mock, ledger_mock):

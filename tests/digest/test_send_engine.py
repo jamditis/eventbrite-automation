@@ -74,10 +74,10 @@ def _engine(ledger_mock, **overrides):
     base = dict(
         smtp_host="smtp.gmail.com",
         smtp_port=465,
-        smtp_user="njnewscommons@gmail.com",
+        smtp_user="sender@example.com",
         smtp_password="app-pw",
         from_name="Center for Cooperative Media",
-        from_email="njnewscommons@gmail.com",
+        from_email="sender@example.com",
         bcc_always=("joe@example.com", "cassandra@example.com"),
         ledger=ledger_mock,
     )
@@ -102,7 +102,7 @@ def test_send_calls_smtp_with_correct_envelope(smtp_mock, ledger_mock):
     assert msg["To"] == "panelist@example.com"
     assert msg["Reply-To"] == "host@example.com"
     assert msg["Subject"] == "Test"
-    assert msg["From"] == "Center for Cooperative Media <njnewscommons@gmail.com>"
+    assert msg["From"] == "Center for Cooperative Media <sender@example.com>"
 
 
 def test_envelope_to_includes_bcc_addresses_and_msg_strips_bcc_header(
@@ -142,7 +142,7 @@ def test_send_logs_in_with_smtp_credentials(smtp_mock, ledger_mock):
         text_body="x",
         slug="x",
     )
-    assert smtp_mock[0].captured["login"] == ("njnewscommons@gmail.com", "app-pw")
+    assert smtp_mock[0].captured["login"] == ("sender@example.com", "app-pw")
     assert smtp_mock[0].captured["init_args"] == ("smtp.gmail.com", 465)
 
 
@@ -182,7 +182,7 @@ def test_send_includes_well_formed_list_unsubscribe_header(smtp_mock, ledger_moc
     lu = smtp_mock[0].captured["send_message_msgs"][0]["List-Unsubscribe"]
     m = re.fullmatch(r"<mailto:([^?]+)\?subject=([^>]+)>", lu)
     assert m, f"List-Unsubscribe not in valid mailto-URI form: {lu!r}"
-    assert m.group(1) == "njnewscommons@gmail.com"
+    assert m.group(1) == "sender@example.com"
     assert m.group(2) == "unsubscribe%20ai-newsroom-march-2026"
 
 
