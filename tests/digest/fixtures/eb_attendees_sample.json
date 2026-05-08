@@ -1,0 +1,75 @@
+{
+  "page_one": {
+    "pagination": {
+      "page_number": 1,
+      "page_size": 50,
+      "page_count": 2,
+      "object_count": 75,
+      "has_more_items": true,
+      "continuation": "eyJwYWdlIjoyfQ=="
+    },
+    "attendees": [
+      {
+        "id": "100001",
+        "created": "2026-05-01T10:00:00Z",
+        "status": "Attending",
+        "cancelled": false,
+        "refunded": false,
+        "profile": {
+          "first_name": "Sarah",
+          "last_name": "Smith",
+          "email": "sarah@northjersey.example",
+          "name": "Sarah Smith"
+        },
+        "answers": [
+          {
+            "question_id": "q_1",
+            "question": "What do you hope to learn?",
+            "answer": "Practical AI workflows",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "id": "100002",
+        "created": "2026-05-02T11:00:00Z",
+        "status": "Not Attending",
+        "cancelled": true,
+        "refunded": true,
+        "profile": {
+          "first_name": "Bob",
+          "last_name": "Cancelled",
+          "email": "bob@example.com",
+          "name": "Bob Cancelled"
+        },
+        "answers": []
+      }
+    ]
+  },
+  "page_two": {
+    "pagination": {
+      "page_number": 2,
+      "page_size": 50,
+      "page_count": 2,
+      "object_count": 75,
+      "has_more_items": false,
+      "continuation": null
+    },
+    "attendees": [
+      {
+        "id": "100003",
+        "created": "2026-05-03T12:00:00Z",
+        "status": "Attending",
+        "cancelled": false,
+        "refunded": false,
+        "profile": {
+          "first_name": "Marcus",
+          "last_name": "Chen",
+          "email": "marcus@example.com",
+          "name": "Marcus Chen"
+        },
+        "answers": []
+      }
+    ]
+  }
+}
