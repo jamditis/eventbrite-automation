@@ -1,0 +1,139 @@
+"""Airtable I/O — list enabled events and update system fields after send.
+
+Field name strings live in `FIELD` so a future Airtable schema rename is a
+single-spot edit rather than a grep across modules.
+"""
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
+
+from pyairtable import Api
+
+
+class FIELD:
+    SLUG = "Event slug"
+    TITLE = "Event title"
+    EB_EVENT_ID = "Eventbrite event ID"
+    ENABLED = "Enabled"
+    SPEAKER_EMAILS = "Speaker emails"
+    LEAD_HOST_EMAIL = "Lead host email"
+    DAYS_OUT = "Days out to start"
+    SEND_TIME_ET = "Send time (ET)"
+    QUESTION_IDS = "Registration question IDs to include"
+    EVENT_START_ET = "Event start (ET)"
+    LAST_DIGEST_SENT_AT = "Last digest sent at"
+    LAST_ATTENDEE_CURSOR = "Last attendee cursor"
+    LAST_DIGEST_COUNT = "Last digest attendee count"
+    INITIAL_BRIEFING_SENT_AT = "Initial briefing sent at"
+    INITIAL_BRIEFING_REQUESTED_AT = "Initial briefing requested at"
+    LAST_ERROR = "Last error"
+
+
+_LAST_ERROR_MAX = 1000
+
+
+def _parse_emails(raw: str) -> list[str]:
+    if not raw:
+        return []
+    parts = re.split(r"[,\n]", raw)
+    return [p.strip() for p in parts if p.strip()]
+
+
+def _parse_question_ids(raw: str) -> list[str]:
+    if not raw:
+        return []
+    return [p.strip() for p in raw.split(",") if p.strip()]
+
+
+@dataclass
+class EventRow:
+    record_id: str
+    slug: str
+    title: str
+    eventbrite_event_id: str
+    enabled: bool
+    speaker_emails: list[str]
+    lead_host_email: str
+    days_out_to_start: int
+    send_time_et: str
+    question_ids_to_include: list[str]
+    event_start_et: str | None
+    last_digest_sent_at: str | None
+    last_attendee_cursor: str | None
+    last_digest_attendee_count: int
+    initial_briefing_sent_at: str | None
+    initial_briefing_requested_at: str | None
+    last_error: str
+    raw_fields: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_airtable(cls, record: dict) -> EventRow:
+        f = record.get("fields") or {}
+        return cls(
+            record_id=record["id"],
+            slug=f.get(FIELD.SLUG, "") or "",
+            title=f.get(FIELD.TITLE, "") or "",
+            eventbrite_event_id=f.get(FIELD.EB_EVENT_ID, "") or "",
+            enabled=bool(f.get(FIELD.ENABLED, False)),
+            speaker_emails=_parse_emails(f.get(FIELD.SPEAKER_EMAILS, "") or ""),
+            lead_host_email=f.get(FIELD.LEAD_HOST_EMAIL, "") or "",
+            days_out_to_start=int(f.get(FIELD.DAYS_OUT, 7) or 7),
+            send_time_et=f.get(FIELD.SEND_TIME_ET, "07:00") or "07:00",
+            question_ids_to_include=_parse_question_ids(f.get(FIELD.QUESTION_IDS, "") or ""),
+            event_start_et=f.get(FIELD.EVENT_START_ET),
+            last_digest_sent_at=f.get(FIELD.LAST_DIGEST_SENT_AT),
+            last_attendee_cursor=f.get(FIELD.LAST_ATTENDEE_CURSOR),
+            last_digest_attendee_count=int(f.get(FIELD.LAST_DIGEST_COUNT, 0) or 0),
+            initial_briefing_sent_at=f.get(FIELD.INITIAL_BRIEFING_SENT_AT),
+            initial_briefing_requested_at=f.get(FIELD.INITIAL_BRIEFING_REQUESTED_AT),
+            last_error=f.get(FIELD.LAST_ERROR, "") or "",
+            raw_fields=dict(f),
+        )
+
+
+class AirtableClient:
+    def __init__(self, pat: str, base_id: str, table_name: str = "Events") -> None:
+        self._api = Api(pat)
+        self._base_id = base_id
+        self._table_name = table_name
+
+    @property
+    def _table(self):
+        return self._api.table(self._base_id, self._table_name)
+
+    def list_enabled(self) -> list[EventRow]:
+        records = self._table.all(formula="{Enabled} = TRUE()")
+        return [EventRow.from_airtable(r) for r in records]
+
+    def list_all(self) -> list[EventRow]:
+        return [EventRow.from_airtable(r) for r in self._table.all()]
+
+    def update_after_send(
+        self,
+        row: EventRow,
+        *,
+        sent_at: datetime,
+        attendee_cursor: str,
+        attendee_count: int,
+    ) -> None:
+        self._table.update(
+            row.record_id,
+            {
+                FIELD.LAST_DIGEST_SENT_AT: sent_at.isoformat(),
+                FIELD.LAST_ATTENDEE_CURSOR: attendee_cursor,
+                FIELD.LAST_DIGEST_COUNT: attendee_count,
+                FIELD.LAST_ERROR: "",
+            },
+        )
+
+    def record_error(self, row: EventRow, message: str) -> None:
+        self._table.update(row.record_id, {FIELD.LAST_ERROR: message[:_LAST_ERROR_MAX]})
+
+    def mark_initial_briefing_sent(self, row: EventRow, at: datetime) -> None:
+        self._table.update(row.record_id, {FIELD.INITIAL_BRIEFING_SENT_AT: at.isoformat()})
+
+    def clear_initial_briefing_request(self, row: EventRow) -> None:
+        self._table.update(row.record_id, {FIELD.INITIAL_BRIEFING_REQUESTED_AT: None})
