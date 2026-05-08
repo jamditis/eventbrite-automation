@@ -1,5 +1,7 @@
 # Eventbrite attendee digest implementation plan
 
+> **Architecture pivoted during execution.** This plan describes a new sibling repo at `~/projects/eventbrite-attendee-digest/` with a `src/digest/` layout, `.venv/`, and `PYTHONPATH=src` test commands. Mid-build, the service was folded into this repo (`eventbrite-automation`) at `digest/` (flat layout), reusing the existing `venv/`. The 16 implementation commits + their codex-review fixups landed first in the sibling repo, then were filter-repo'd into a feature branch on `eventbrite-automation` (commit `1fc4f96` is the merge, `e1cae88` is the cleanup that retargeted paths). The actual runtime is `digest/cron.py`, run as `venv/bin/python -m digest.cron` from the repo root with no `PYTHONPATH`. Body preserved as the historical task-by-task record.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superjawn:subagent-driven-development (recommended) or superjawn:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a daily digest automation that emails CCM event speakers a hybrid roster (full one-liner profiles + form Q&A for new attendees, condensed list of existing) once per day, silent on days with no new registrations, configurable from a CF-Access-gated admin UI.

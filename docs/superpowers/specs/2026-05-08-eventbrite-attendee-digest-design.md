@@ -1,5 +1,7 @@
 # Eventbrite attendee digest — design spec
 
+> **Architecture pivoted during execution.** This spec was written assuming a new sibling repo at `~/projects/eventbrite-attendee-digest/` with a `src/digest/` layout. Mid-build, the digest service was folded into this repo (`eventbrite-automation`) at `digest/` (flat layout), to share the existing Eventbrite client + Airtable token already living here. See commit `e1cae88` (`fix(digest): retarget paths + merge deps after sibling-repo fold-in`) for the migration. Body preserved as the historical decision record.
+
 **Status:** Approved (brainstorming phase). Awaiting implementation plan.
 **Date:** 2026-05-08
 **Stakeholders:** Joe Amditis, Cassandra Etienne (associate director of programming and membership, CCM)
