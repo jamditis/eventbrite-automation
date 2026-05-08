@@ -1,19 +1,6 @@
-[build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
-
-[project]
-name = "eventbrite-attendee-digest"
-version = "0.1.0"
-description = "Daily digest of Eventbrite attendees for CCM event speakers"
-readme = "README.md"
-requires-python = ">=3.11"
-
-[tool.setuptools.packages.find]
-where = ["src"]
-
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+# Ensures the `digest/` package at repo root is importable from tests.
+pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
 

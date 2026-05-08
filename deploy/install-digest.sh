@@ -4,28 +4,32 @@
 #
 # DO NOT run before:
 #   - .env populated (run `cp deploy/env.example .env` and fill in)
-#   - Airtable EventDigests base exists with at least one enabled row
+#   - Airtable EventDigests base exists with at least one enabled row OR
+#     one event row with `Initial briefing requested at` set
 #   - Phase 0 CF Pages migration is verified (only matters for the admin UI;
 #     the cron itself runs without it).
+#
+# Coexists with the existing webhook deploy (eventbrite-automation.service);
+# this script only touches the digest-cron units.
 set -euo pipefail
 
-REPO=/home/jamditis/projects/eventbrite-attendee-digest
+REPO=/home/jamditis/projects/eventbrite-automation
 
 if [ ! -f "$REPO/.env" ]; then
     echo "FATAL: $REPO/.env missing. Copy from deploy/env.example and fill in first."
     exit 1
 fi
 
-if [ ! -f "$REPO/.venv/bin/python" ]; then
-    echo "FATAL: venv missing. Run: python3 -m venv .venv && .venv/bin/pip install -r requirements.txt"
+if [ ! -f "$REPO/venv/bin/python" ]; then
+    echo "FATAL: venv missing. Run: python3 -m venv venv && venv/bin/pip install -r requirements.txt"
     exit 1
 fi
 
 # Verify the cron can actually import the package as systemd will invoke it.
-# This catches PYTHONPATH / src-layout misconfig before install rather than at
-# first systemd tick.
-if ! PYTHONPATH="$REPO/src" "$REPO/.venv/bin/python" -m digest.cron --help >/dev/null 2>&1; then
-    echo "FATAL: 'python -m digest.cron --help' fails with PYTHONPATH=src. Check the venv + package layout."
+# digest/ is at the repo root, so running from $REPO with no PYTHONPATH works.
+# This catches package-layout misconfig before install rather than at first tick.
+if ! ( cd "$REPO" && "$REPO/venv/bin/python" -m digest.cron --help >/dev/null 2>&1 ); then
+    echo "FATAL: 'python -m digest.cron --help' fails. Check the venv + package layout."
     exit 1
 fi
 

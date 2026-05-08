@@ -7,7 +7,6 @@ Wants=network-online.target
 Type=oneshot
 User=jamditis
 Group=jamditis
-WorkingDirectory=/home/jamditis/projects/eventbrite-attendee-digest
-EnvironmentFile=/home/jamditis/projects/eventbrite-attendee-digest/.env
-Environment=PYTHONPATH=/home/jamditis/projects/eventbrite-attendee-digest/src
-ExecStart=/usr/bin/timeout --foreground 600 /home/jamditis/projects/eventbrite-attendee-digest/.venv/bin/python -m digest.cron
+WorkingDirectory=/home/jamditis/projects/eventbrite-automation
+EnvironmentFile=/home/jamditis/projects/eventbrite-automation/.env
+ExecStart=/usr/bin/timeout --foreground 600 /home/jamditis/projects/eventbrite-automation/venv/bin/python -m digest.cron

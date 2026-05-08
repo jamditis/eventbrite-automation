@@ -1,4 +1,4 @@
-# eventbrite-attendee-digest runbook
+# Attendee digest runbook
 
 Operational reference for the cron service. Live testing prerequisites + first-deploy checklist live in the README quick-start; this doc is for ongoing operations and incident response.
 
@@ -15,7 +15,7 @@ Sends one daily digest email per opted-in event to the event's speakers/hosts/in
 | Lock | `~/.local/state/digest-cron.lock` (XDG state dir; flock-based, auto-released on process exit) |
 | State | Airtable `EventDigests` base — see "State fields" below |
 | Dup-send safety net | `~/.claude/workstation/sent-emails.db` (email_ledger from `houseofjawn-bot/scheduler/`) |
-| Lifetime install path | `/home/jamditis/projects/eventbrite-attendee-digest/` (hardcoded in systemd unit; relocating requires re-running `install.sh` after editing the service template) |
+| Lifetime install path | `/home/jamditis/projects/eventbrite-automation/` (hardcoded in systemd unit; relocating requires re-running `install.sh` after editing the service template) |
 
 ### State fields (Airtable `Events` table)
 
@@ -54,14 +54,14 @@ In Airtable, uncheck `Enabled` on the event row. Cron skips daily-cadence sends 
 ### Manually trigger one tick
 
 ```bash
-cd /home/jamditis/projects/eventbrite-attendee-digest
-PYTHONPATH=src .venv/bin/python -m digest.cron --log-level=DEBUG
+cd /home/jamditis/projects/eventbrite-automation
+venv/bin/python -m digest.cron --log-level=DEBUG
 ```
 
 ### Dry run (renders + logs, no SMTP send, no state write)
 
 ```bash
-PYTHONPATH=src .venv/bin/python -m digest.cron --dry-run --log-level=DEBUG
+venv/bin/python -m digest.cron --dry-run --log-level=DEBUG
 ```
 
 ### Check what the timer thinks it's doing
@@ -97,7 +97,7 @@ journalctl -u digest-cron.service -f   # confirm next tick
 
 ```bash
 sudo systemctl cat digest-cron.service | grep EnvironmentFile
-test -s /home/jamditis/projects/eventbrite-attendee-digest/.env && echo "ok" || echo "FILE EMPTY OR MISSING"
+test -s /home/jamditis/projects/eventbrite-automation/.env && echo "ok" || echo "FILE EMPTY OR MISSING"
 ```
 
 ### `ModuleNotFoundError: No module named 'digest'`
