@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ subject }}</title>
+</head>
+<body style="margin: 0; padding: 0; background: #f6f7fa; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">
+  <div style="max-width: 600px; margin: 0 auto; padding: 24px; background: #fff; color: #1a1a1a;">
+
+    {% if logo_url %}
+    <div style="margin-bottom: 16px;">
+      <img src="{{ logo_url }}" alt="Center for Cooperative Media" width="120" style="display: block;">
+    </div>
+    {% endif %}
+
+    <h1 style="font-size: 22px; line-height: 1.3; margin: 0 0 4px 0;">{{ event_title }}</h1>
+    <p style="font-size: 14px; color: #555; margin: 0 0 24px 0;">{{ event_when }}{% if event_location %} · {{ event_location }}{% endif %}</p>
+
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 16px 0;">
+
+    <p style="font-size: 16px; margin: 0 0 24px 0;">
+      <strong>{{ total_count }} total registered</strong>
+      {% if new_attendees %} · {{ new_attendees|length }} new since yesterday{% endif %}
+    </p>
+
+    {% if new_attendees %}
+    <h2 style="font-size: 18px; margin: 24px 0 12px 0;">New registrants</h2>
+    {% for p in new_attendees %}
+    <div style="margin: 0 0 18px 0;">
+      <p style="margin: 0; line-height: 1.4;">{{ p.blurb }}</p>
+      {% if p.form_qa %}
+      <dl style="margin: 6px 0 0 16px; font-size: 14px; color: #444;">
+        {% for qa in p.form_qa %}
+        <dt style="font-weight: 600; margin-top: 6px;">{{ qa.question }}</dt>
+        <dd style="margin: 0 0 0 12px;">{{ qa.answer }}</dd>
+        {% endfor %}
+      </dl>
+      {% endif %}
+    </div>
+    {% endfor %}
+    {% endif %}
+
+    {% if existing_attendees %}
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 24px 0 16px 0;">
+    <h2 style="font-size: 18px; margin: 0 0 12px 0;">Already registered ({{ existing_attendees|length }})</h2>
+    <ul style="list-style: none; padding: 0; margin: 0; font-size: 14px;">
+      {% for p in existing_attendees %}
+      <li style="padding: 4px 0; border-bottom: 1px solid #f0f0f0;">{{ p.name }}{% if p.org %} — {{ p.org }}{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+
+    <hr style="border: none; border-top: 1px solid #ddd; margin: 32px 0 16px 0;">
+
+    <p style="font-size: 13px; color: #666; margin: 0 0 8px 0;">
+      Manage this digest: <a href="{{ admin_url }}" style="color: #0066cc;">{{ admin_url }}</a>
+    </p>
+    <p style="font-size: 12px; color: #999; margin: 0;">
+      Sent by the Center for Cooperative Media · njnewscommons@gmail.com
+    </p>
+
+  </div>
+</body>
+</html>
