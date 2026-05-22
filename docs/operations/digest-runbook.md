@@ -10,7 +10,7 @@ Sends one daily digest email per opted-in event to the event's speakers/hosts/in
 
 | Surface | Location |
 | --- | --- |
-| Service | `digest-cron.timer` on **houseofjawn** (systemd, every 30 min at `:00` and `:30`) |
+| Service | `digest-cron.timer` on **houseofjawn** (systemd, once daily at 07:00 ET) |
 | Logs | `journalctl -u digest-cron.service` (canonical log surface) |
 | Lock | `~/.local/state/digest-cron.lock` (XDG state dir; flock-based, auto-released on process exit) |
 | State | Airtable `EventDigests` base — see "State fields" below |
@@ -28,7 +28,7 @@ The cron reads these to decide what to do, and writes them after each tick:
 | `Speaker emails` | read | Comma- or newline-separated To-list. |
 | `Lead host email` | read | Reply-To + ledger key. |
 | `Days out to start` | read | Window opens this many days before event start. |
-| `Send time (ET)` | read | Daily fire-no-earlier-than time. |
+| `Send time (ET)` | read | Daily fire-no-earlier-than floor. The cron ticks once a day at 07:00 ET, so a value **later than 07:00 means the event never fires** — keep it `<= 07:00` or move the timer's `OnCalendar`. |
 | `Registration question IDs to include` | read | Optional Q&A filter. |
 | `Event start (ET)` | read | Used for window calculation. NOT auto-refreshed from Eventbrite — staff must update if EB event reschedules. |
 | `Initial briefing requested at` | read, write (clear after send) | Staff sets this via admin UI to fire the one-shot initial briefing. |
@@ -196,7 +196,7 @@ If a digest goes out wrong (hallucinated profiles, wrong recipients, broken form
 
 These are explicitly out of scope for the first live-test phase. Track in follow-up tickets if any becomes a real-world problem:
 
-- EB API retry/backoff on 5xx or 429 — the cron logs the failure into `Last error` and skips that event for the tick. The next 30-min tick retries naturally.
-- SMTP retry — same: failures log and surface; next tick retries.
+- EB API retry/backoff on 5xx or 429 — the cron logs the failure into `Last error` and skips that event for the tick. The next daily tick retries it (~24h later).
+- SMTP retry — same: failures log and surface; the next daily tick retries (~24h later).
 - Telegram alerts on catastrophic cron failure — not wired. Operators rely on `journalctl` + `Last error` for visibility.
 - Auto-refreshing `Event start (ET)` from Eventbrite each tick — staff must update manually if the EB event reschedules.
