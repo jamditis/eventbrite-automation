@@ -3,7 +3,9 @@
 # Idempotent: re-running picks up unit-file changes via daemon-reload.
 #
 # DO NOT run before:
-#   - .env populated (run `cp deploy/env.example .env` and fill in)
+#   - .env.digest populated (run `cp deploy/env.example .env.digest` and fill in).
+#     The digest uses its own env file — `.env` belongs to the webhook server
+#     and sets a different AIRTABLE_BASE_ID, so the two cannot share it.
 #   - Airtable EventDigests base exists with at least one enabled row OR
 #     one event row with `Initial briefing requested at` set
 #   - Phase 0 CF Pages migration is verified (only matters for the admin UI;
@@ -15,8 +17,8 @@ set -euo pipefail
 
 REPO=/home/jamditis/projects/eventbrite-automation
 
-if [ ! -f "$REPO/.env" ]; then
-    echo "FATAL: $REPO/.env missing. Copy from deploy/env.example and fill in first."
+if [ ! -f "$REPO/.env.digest" ]; then
+    echo "FATAL: $REPO/.env.digest missing. Copy from deploy/env.example and fill in first."
     exit 1
 fi
 
@@ -41,7 +43,7 @@ if [ ! -f "$LEDGER_PATH/email_ledger.py" ]; then
     echo "         but the cross-session dup safety net is DISABLED. Primary"
     echo "         dup defense (Airtable last_digest_sent_at) still works."
     echo "         To fix: install houseofjawn-bot, or set DIGEST_LEDGER_PATH"
-    echo "         in .env to point to a directory containing email_ledger.py."
+    echo "         in .env.digest to point to a directory containing email_ledger.py."
 fi
 
 sudo install -m 644 "$REPO/deploy/digest-cron.service" /etc/systemd/system/

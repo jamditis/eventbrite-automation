@@ -33,6 +33,20 @@ def test_load_config_defaults(env):
     assert cfg.smtp_port == 465
     assert cfg.airtable_table_name == "Events"
     assert cfg.gemini_bin == "gemini"
+    assert cfg.logo_url == (
+        "https://summit.collaborativejournalism.org/ccm-logo.png"
+    )
+
+
+def test_load_config_logo_url_override(env):
+    env.setenv("EVENTBRITE_PRIVATE_TOKEN", "x")
+    env.setenv("AIRTABLE_PAT", "x")
+    env.setenv("AIRTABLE_BASE_ID", "x")
+    env.setenv("DASHBOARD_API_KEY", "x")
+    env.setenv("SMTP_PASSWORD", "x")
+    env.setenv("LOGO_URL", "https://example.org/custom-logo.png")
+    cfg = load_config()
+    assert cfg.logo_url == "https://example.org/custom-logo.png"
 
 
 def test_load_config_raises_config_error_on_invalid_smtp_port(env):

@@ -8,5 +8,5 @@ Type=oneshot
 User=jamditis
 Group=jamditis
 WorkingDirectory=/home/jamditis/projects/eventbrite-automation
-EnvironmentFile=/home/jamditis/projects/eventbrite-automation/.env
+EnvironmentFile=/home/jamditis/projects/eventbrite-automation/.env.digest
 ExecStart=/usr/bin/timeout --foreground 600 /home/jamditis/projects/eventbrite-automation/venv/bin/python -m digest.cron

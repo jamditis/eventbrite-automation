@@ -73,6 +73,21 @@ def test_render_existing_section_only_shows_name_and_org_no_qa():
     assert "SHOULD_NOT_RENDER_IN_EXISTING" not in html
 
 
+def test_render_includes_logo_when_logo_url_set():
+    """A non-empty logo_url renders the CCM logo <img> in the email header."""
+    r = EmailRenderer()
+    html = r.render(_ctx(logo_url="https://example.org/ccm-logo.png"))
+    assert '<img src="https://example.org/ccm-logo.png"' in html
+    assert 'alt="Center for Cooperative Media"' in html
+
+
+def test_render_omits_logo_when_logo_url_none():
+    """logo_url=None leaves the {% if logo_url %} block unrendered — no <img>."""
+    r = EmailRenderer()
+    html = r.render(_ctx(logo_url=None))
+    assert "<img" not in html
+
+
 def test_render_or_none_returns_none_when_no_attendees():
     r = EmailRenderer()
     out = r.render_or_none(_ctx(total_count=0))
