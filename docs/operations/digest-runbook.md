@@ -10,7 +10,7 @@ Sends one daily digest email per opted-in event to the event's speakers/hosts/in
 
 | Surface | Location |
 | --- | --- |
-| Service | `digest-cron.timer` on **houseofjawn** (systemd, once daily at 07:00 ET) |
+| Service | `digest-cron.timer` on **houseofjawn** (systemd, once daily at 07:00 ET; `OnCalendar` pins `America/New_York`, so it is not host-timezone-dependent) |
 | Logs | `journalctl -u digest-cron.service` (canonical log surface) |
 | Lock | `~/.local/state/digest-cron.lock` (XDG state dir; flock-based, auto-released on process exit) |
 | State | Airtable `EventDigests` base — see "State fields" below |

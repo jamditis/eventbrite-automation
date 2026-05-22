@@ -11,11 +11,16 @@
 #
 # Retry behavior also changes: a transient per-event failure (EB 429, SMTP
 # error) is retried on the NEXT day's tick, not 30 minutes later.
+#
+# OnCalendar pins America/New_York explicitly. Without the suffix systemd
+# evaluates the time in the host's local timezone -- so "07:00 ET" would
+# silently become wrong if houseofjawn were ever switched to UTC. The
+# explicit-timezone suffix needs systemd >= 252 (houseofjawn runs 257).
 [Unit]
-Description=Run eventbrite digest cron once daily at 07:00 ET
+Description=Run eventbrite digest cron once daily at 07:00 America/New_York
 
 [Timer]
-OnCalendar=*-*-* 07:00:00
+OnCalendar=*-*-* 07:00:00 America/New_York
 Persistent=true
 Unit=digest-cron.service
 
