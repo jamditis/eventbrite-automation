@@ -175,6 +175,7 @@ def _run_briefing(
     *,
     is_initial: bool,
     dry_run: bool,
+    logo_url: str = "",
 ) -> None:
     logger.info("processing %s (initial=%s)", row.slug, is_initial)
 
@@ -236,7 +237,7 @@ def _run_briefing(
         existing_attendees=existing_profiles,
         admin_url=f"{ADMIN_URL_BASE}/{row.slug}/admin",
         subject=subject,
-        logo_url=None,
+        logo_url=logo_url or None,
     )
     html_body = renderer.render(ctx)
     text_body = renderer.render_plain_text(ctx)
@@ -333,12 +334,12 @@ def main(dry_run: bool = False) -> None:
                 if has_pending_initial_briefing(row):
                     _run_briefing(
                         row, eb, crm, llm, renderer, sender, airtable, now,
-                        is_initial=True, dry_run=dry_run,
+                        is_initial=True, dry_run=dry_run, logo_url=cfg.logo_url,
                     )
                 elif row.enabled and should_send_today(row, now):
                     _run_briefing(
                         row, eb, crm, llm, renderer, sender, airtable, now,
-                        is_initial=False, dry_run=dry_run,
+                        is_initial=False, dry_run=dry_run, logo_url=cfg.logo_url,
                     )
             except Exception as e:
                 logger.exception("event %s failed", row.slug)

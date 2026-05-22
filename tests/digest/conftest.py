@@ -20,6 +20,7 @@ def env(monkeypatch):
                 "GEMINI_",
                 "CODEX_",
                 "TELEGRAM_",
+                "LOGO_URL",
             )
         ):
             monkeypatch.delenv(key, raising=False)

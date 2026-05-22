@@ -38,6 +38,7 @@ class Config:
     smtp_password: str
     smtp_from_name: str
     smtp_from_email: str
+    logo_url: str
     bcc_always: tuple[str, ...]
     gemini_bin: str
     codex_bin: str
@@ -89,6 +90,9 @@ def load_config() -> Config:
         ),
         smtp_from_email=os.environ.get(
             "SMTP_FROM_EMAIL", "sender@example.com"
+        ),
+        logo_url=os.environ.get(
+            "LOGO_URL", "https://summit.collaborativejournalism.org/ccm-logo.png"
         ),
         bcc_always=bcc_always,
         gemini_bin=os.environ.get("GEMINI_BIN", "gemini"),
