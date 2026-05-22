@@ -1,20 +1,23 @@
 """Env-driven config. Required keys must be set or load_config raises ConfigError.
 
-Loads `.env` at module import via python-dotenv, matching the existing
-webhook-side `config.py` in this repo. systemd reads `.env` directly via
-`EnvironmentFile=`, so the cron path doesn't need this — but the manual
-operator commands documented in the runbook (e.g. `venv/bin/python -m
-digest.cron --dry-run`) run from the repo root and silently fail
-without it.
+Loads `.env.digest` at module import via python-dotenv. The digest uses
+its own env file — the repo's `.env` belongs to the webhook server and
+sets a different `AIRTABLE_BASE_ID`, so the two cannot share it. systemd
+reads `.env.digest` directly via `EnvironmentFile=`, so the cron path
+doesn't need this load — but the manual operator commands documented in
+the runbook (e.g. `venv/bin/python -m digest.cron --dry-run`) run from
+the repo root and silently fail without it.
 """
 from __future__ import annotations
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+# config.py lives in digest/; the digest env file sits at the repo root.
+load_dotenv(Path(__file__).resolve().parent.parent / ".env.digest")
 
 
 class ConfigError(RuntimeError):
