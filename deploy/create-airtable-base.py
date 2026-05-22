@@ -28,6 +28,7 @@ import json
 import subprocess
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 API_ROOT = "https://api.airtable.com/v0"
@@ -111,28 +112,44 @@ def _api(method: str, url: str, token: str, body: dict | None = None) -> dict:
             return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         detail = e.read().decode(errors="replace")
-        raise SystemExit(f"Airtable API {method} {url} failed: {e.code} {detail}")
+        raise SystemExit(
+            f"Airtable API {method} {url} failed: {e.code} {detail}"
+        ) from e
 
 
 def _find_base(token: str, name: str) -> str | None:
-    """Return the ID of an existing base with this name, or None."""
-    result = _api("GET", f"{API_ROOT}/meta/bases", token)
-    for base in result.get("bases", []):
-        if base.get("name") == name:
-            return base["id"]
-    return None
+    """Return the ID of an existing base with this name, or None.
+
+    GET /meta/bases is paginated: a large account returns an `offset` token
+    pointing at the next page. Walk every page before concluding the base is
+    absent — otherwise a re-run could miss a base on page 2+ and create a
+    duplicate, defeating this script's idempotence guarantee.
+    """
+    url = f"{API_ROOT}/meta/bases"
+    while True:
+        result = _api("GET", url, token)
+        for base in result.get("bases", []):
+            if base.get("name") == name:
+                return base["id"]
+        offset = result.get("offset")
+        if not offset:
+            return None
+        url = f"{API_ROOT}/meta/bases?offset={urllib.parse.quote(offset)}"
 
 
 def _ensure_stub_row(token: str, base_id: str, table: str) -> None:
     """Add the integration-test stub row if the table has no rows yet."""
+    # The table name goes into the URL path; encode it so a name with spaces
+    # or reserved characters (e.g. a non-default --table) builds a valid URL.
+    table_path = urllib.parse.quote(table, safe="")
     existing = _api(
-        "GET", f"{API_ROOT}/{base_id}/{table}?maxRecords=1", token
+        "GET", f"{API_ROOT}/{base_id}/{table_path}?maxRecords=1", token
     )
     if existing.get("records"):
-        print(f"  table already has rows — leaving stub row alone")
+        print("  table already has rows — leaving stub row alone")
         return
     _api(
-        "POST", f"{API_ROOT}/{base_id}/{table}", token,
+        "POST", f"{API_ROOT}/{base_id}/{table_path}", token,
         {"records": [{"fields": STUB_ROW}], "typecast": True},
     )
     print(f"  added stub row: {STUB_ROW['Event slug']}")
@@ -179,13 +196,13 @@ def main() -> int:
 
     print()
     print("Done. Next steps:")
-    print(f"  1. AIRTABLE_BASE_ID={base_id}")
+    print(f"  1. Set AIRTABLE_BASE_ID={base_id} in .env.digest")
     print("  2. Create a base-scoped PAT (data.records:read+write, "
           "schema.bases:read) at https://airtable.com/create/tokens")
     print("     restricted to this base, then: pass insert "
           "claude/api/airtable-eventdigests")
-    print("  3. Populate eventbrite-automation/.env on houseofjawn from "
-          "deploy/env.example")
+    print("  3. Populate eventbrite-automation/.env.digest on houseofjawn "
+          "from deploy/env.example")
     return 0
 
 
