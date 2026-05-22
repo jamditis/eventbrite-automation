@@ -1,8 +1,26 @@
+# Eventbrite attendee digest -- schedule.
+#
+# Ticks once daily. The digest is a daily email per event, so one tick a day
+# is enough; the previous *:0/30 schedule was 48 runs/day for a single send.
+#
+# Consequence of a once-a-day tick: a row's `Send time (ET)` is only a
+# fire-no-earlier-than floor -- should_send_today() requires now_et >=
+# send_time. The tick lands at 07:00 ET, so an event whose `Send time (ET)`
+# is later than 07:00 never clears the gate and its digest never sends. Keep
+# per-event send times <= 07:00, or move OnCalendar later to cover them.
+#
+# Retry behavior also changes: a transient per-event failure (EB 429, SMTP
+# error) is retried on the NEXT day's tick, not 30 minutes later.
+#
+# OnCalendar pins America/New_York explicitly. Without the suffix systemd
+# evaluates the time in the host's local timezone -- so "07:00 ET" would
+# silently become wrong if houseofjawn were ever switched to UTC. The
+# explicit-timezone suffix needs systemd >= 252 (houseofjawn runs 257).
 [Unit]
-Description=Run eventbrite digest cron every 30 minutes
+Description=Run eventbrite digest cron once daily at 07:00 America/New_York
 
 [Timer]
-OnCalendar=*:0/30
+OnCalendar=*-*-* 07:00:00 America/New_York
 Persistent=true
 Unit=digest-cron.service
 
