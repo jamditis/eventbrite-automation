@@ -53,6 +53,12 @@ REQUIRED = (
     "AIRTABLE_BASE_ID",
     "DASHBOARD_API_KEY",
     "SMTP_PASSWORD",
+    # SMTP_USER is the auth identity; SMTP_FROM_EMAIL is the From header and
+    # the List-Unsubscribe mailto target. Both must be real — a placeholder
+    # would fail SMTP login or send unsubscribe replies into a void. Required
+    # so a blank in .env.digest fails at load time, not mid-send.
+    "SMTP_USER",
+    "SMTP_FROM_EMAIL",
 )
 
 
@@ -83,14 +89,12 @@ def load_config() -> Config:
         dashboard_api_key=os.environ["DASHBOARD_API_KEY"],
         smtp_host=os.environ.get("SMTP_HOST", "smtp.gmail.com"),
         smtp_port=smtp_port,
-        smtp_user=os.environ.get("SMTP_USER", "sender@example.com"),
+        smtp_user=os.environ["SMTP_USER"],
         smtp_password=os.environ["SMTP_PASSWORD"],
         smtp_from_name=os.environ.get(
             "SMTP_FROM_NAME", "Center for Cooperative Media"
         ),
-        smtp_from_email=os.environ.get(
-            "SMTP_FROM_EMAIL", "sender@example.com"
-        ),
+        smtp_from_email=os.environ["SMTP_FROM_EMAIL"],
         logo_url=os.environ.get(
             "LOGO_URL", "https://summit.collaborativejournalism.org/ccm-logo.png"
         ),

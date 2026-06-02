@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 
 class LedgerProtocol(Protocol):
     def check_duplicate(
-        self, recipient: str, subject: str, hours: int = 6
+        self, recipient: str, subject: str, thread_id: str | None = None, hours: int = 6
     ) -> dict | None: ...
 
     def log_send(
@@ -81,12 +81,31 @@ class SendEngine:
         html_body: str,
         text_body: str,
         slug: str,
+        kind: str = "digest",
         session_type: str = "cron",
     ) -> SendResult:
-        dup = self._ledger.check_duplicate(recipient=reply_to, subject=subject, hours=20)
+        # Dedup key = (reply_to, slug:kind), not (reply_to, subject). The
+        # daily subject embeds the new-registration count, which changes
+        # between ticks — keying on it would let a genuine same-event
+        # double-fire slip through (different counts -> different subjects ->
+        # no match) while two distinct events sharing a lead host and an
+        # identical subject within the window would wrongly suppress each
+        # other. The slug is the event's stable identity. `kind` distinguishes
+        # the email TYPE (initial briefing vs daily digest): both share a slug
+        # and a lead-host reply_to, so a bare-slug key would make a daily
+        # digest sent within the ledger window of its initial briefing look
+        # like a duplicate and never go out. Suffixing the kind keeps
+        # within-series dedup (a true same-type double-fire still matches)
+        # while isolating the two types. Fall back to subject keying only if a
+        # row somehow has no slug.
+        thread_id = f"{slug}:{kind}" if slug else None
+        dup = self._ledger.check_duplicate(
+            recipient=reply_to, subject=subject, thread_id=thread_id, hours=20
+        )
         if dup:
             logger.warning(
-                "ledger says duplicate for reply_to=%s subject=%r; aborting", reply_to, subject
+                "ledger says duplicate for reply_to=%s thread_id=%s subject=%r; aborting",
+                reply_to, thread_id, subject,
             )
             return SendResult(sent=False, reason="duplicate")
 
@@ -111,7 +130,8 @@ class SendEngine:
             recipient=reply_to,
             subject=subject,
             sender=self._from_email,
-            context=f"event-digest:{slug}",
+            thread_id=thread_id,
+            context=f"event-{kind}:{slug}",
             session_type=session_type,
         )
         return SendResult(sent=True)

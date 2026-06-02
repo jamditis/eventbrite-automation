@@ -3,8 +3,12 @@
 Run as: `python -m digest.cron [--dry-run]`
 
 Decision sequence per event row, per tick:
-  1. Disabled? skip.
-  2. Initial briefing pending (requested but not sent)? send + return.
+  1. Initial briefing pending (requested but not sent)? send + return.
+     This fires even when the row is NOT enabled — a staff-requested
+     briefing on a not-yet-enabled draft must not silently never-fire
+     (see AirtableClient.list_active, which selects these rows regardless
+     of Enabled).
+  2. Not enabled? skip the daily-digest path.
   3. Outside the configured days-out window? skip.
   4. Before today's configured send-time (in ET)? skip.
   5. Already sent today? skip.
@@ -144,7 +148,7 @@ class _NoopLedger:
     works.
     """
 
-    def check_duplicate(self, recipient, subject, hours=6):
+    def check_duplicate(self, recipient, subject, thread_id=None, hours=6):
         return None
 
     def log_send(self, **kw):
@@ -253,6 +257,10 @@ def _run_briefing(
         html_body=html_body,
         text_body=text_body,
         slug=row.slug,
+        # Initial briefing and daily digest share a slug and a lead-host
+        # reply_to; the kind keeps their ledger dedup keys distinct so a
+        # daily digest is never suppressed by a recent initial briefing.
+        kind="initial" if is_initial else "daily",
         session_type="cron",
     )
 
@@ -297,8 +305,10 @@ def main(dry_run: bool = False) -> None:
             from email_ledger import check_duplicate, log_send  # type: ignore
 
             class _LedgerWrapper:
-                def check_duplicate(self, recipient, subject, hours=6):
-                    return check_duplicate(recipient, subject, hours=hours)
+                def check_duplicate(self, recipient, subject, thread_id=None, hours=6):
+                    return check_duplicate(
+                        recipient, subject, thread_id=thread_id, hours=hours
+                    )
 
                 def log_send(self, **kw):
                     return log_send(**kw)
