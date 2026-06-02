@@ -50,7 +50,6 @@ DEFAULT_LOCK_PATH = (
     Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state")
     / "digest-cron.lock"
 )
-ADMIN_URL_BASE = "https://pages.centerforcooperativemedia.org/events"
 
 logger = logging.getLogger("digest.cron")
 
@@ -204,6 +203,12 @@ def _run_briefing(
     builder = ProfileBuilder(crm, llm, question_id_filter=row.question_ids_to_include or None)
 
     attendees = list(eb.fetch_attendees(row.eventbrite_event_id))
+    # Each profile still carries an LLM-generated `blurb` for CRM-matched
+    # attendees, but the current briefing template renders name + Q&A only and
+    # never shows the blurb. The pipeline is retained, not surfaced — a recorded
+    # decision, not an accident. Whether to resurface or gate it off is tracked
+    # in issue #8 (codex blurb invocation); don't treat the blurb as dead by
+    # mistake.
     profiles = [p for p in (builder.build(a) for a in attendees) if p is not None]
 
     cursor = row.last_attendee_cursor
@@ -239,9 +244,12 @@ def _run_briefing(
         total_count=len(profiles),
         new_attendees=new_profiles,
         existing_attendees=existing_profiles,
-        admin_url=f"{ADMIN_URL_BASE}/{row.slug}/admin",
         subject=subject,
         logo_url=logo_url or None,
+        # Per-event attendee sheet, generated out-of-band and stored on the
+        # Airtable row. Empty -> None so the "view full sheet" button is omitted.
+        sheet_url=row.sheet_url or None,
+        is_initial=is_initial,
     )
     html_body = renderer.render(ctx)
     text_body = renderer.render_plain_text(ctx)

@@ -26,7 +26,6 @@ def _ctx(**overrides):
         total_count=1,
         new_attendees=[],
         existing_attendees=[],
-        admin_url="x",
         subject="x",
         logo_url=None,
     )
@@ -49,28 +48,244 @@ def test_render_includes_event_title_and_when():
     assert "Zoom" in html
 
 
-def test_render_shows_new_attendee_blurbs_and_qa():
+def test_render_shows_attendee_name_and_qa_in_table():
+    """The at-a-glance table renders each attendee's name plus a column per
+    registration question, with their answer in the cell."""
     r = EmailRenderer()
     html = r.render(
         _ctx(
             new_attendees=[
-                _profile(qa=[{"question": "What do you hope to learn?", "answer": "AI"}])
+                _profile(qa=[{"question": "What do you hope to learn?", "answer": "AI ethics"}])
             ]
         )
     )
-    assert "Sarah Smith — NJJ, Editor." in html
-    assert "What do you hope to learn?" in html
-    assert "<dd" in html  # Q&A block actually rendered with definition list
+    assert "Sarah Smith" in html
+    assert "What do you hope to learn?" in html  # column header
+    assert "AI ethics" in html  # answer cell
+    assert "<table" in html
+    assert "<td" in html
 
 
-def test_render_existing_section_only_shows_name_and_org_no_qa():
+def test_render_table_columns_are_union_of_questions():
+    """Columns adapt to whatever questions the event's form collected — the
+    union across attendees, in first-seen order, not a hardcoded set."""
     r = EmailRenderer()
-    profile_with_qa = _profile(
-        qa=[{"question": "SHOULD_NOT_RENDER_IN_EXISTING", "answer": "X"}]
+    a = _profile(name="Ann A", qa=[{"question": "Session?", "answer": "Morning"}])
+    b = _profile(
+        name="Bob B",
+        qa=[
+            {"question": "Session?", "answer": "Afternoon"},
+            {"question": "Topics?", "answer": "FOIA"},
+        ],
     )
-    html = r.render(_ctx(total_count=2, existing_attendees=[profile_with_qa]))
-    assert "Sarah Smith — NJJ" in html
-    assert "SHOULD_NOT_RENDER_IN_EXISTING" not in html
+    html = r.render(_ctx(total_count=2, new_attendees=[a, b]))
+    assert "Session?" in html
+    assert "Topics?" in html
+    # Bob answered Topics; Ann didn't — her Topics cell is the em-dash placeholder.
+    assert "FOIA" in html
+
+
+def test_render_duplicate_question_labels_keep_distinct_columns():
+    """Two registration questions can share the same prompt text but have
+    different question_ids. Keying columns on the display text alone would
+    collapse them into one column and silently drop one answer. Key on the
+    stable question_id so both answers survive into the briefing."""
+    r = EmailRenderer()
+    p = AttendeeProfile(
+        eb_attendee_id="x",
+        name="Dana D",
+        email="dana@x.com",
+        org="Org",
+        role="Editor",
+        blurb="Dana D — Org, Editor.",
+        form_qa=[
+            {"question_id": "q1", "question": "Your goals?", "answer": "Learn FOIA"},
+            {"question_id": "q2", "question": "Your goals?", "answer": "Meet peers"},
+        ],
+        is_known_ccm_contact=False,
+        crm_contact_id=None,
+        created_at="2026-05-01T10:00:00Z",
+    )
+    html = r.render(_ctx(new_attendees=[p]))
+    # Both answers must appear — neither is silently dropped.
+    assert "Learn FOIA" in html
+    assert "Meet peers" in html
+    # Two distinct data columns (plus the Attendee column) -> 3 header cells.
+    # Match "<th " (trailing space) so the <thead> tag isn't miscounted.
+    assert html.count("<th ") == 3
+
+
+def test_render_initial_briefing_omits_new_badge():
+    """On the initial briefing (is_initial=True) every attendee is new, so a
+    per-row 'new' badge would be uniform noise. Suppression keys on the explicit
+    is_initial signal, not on whether existing rows happen to be present."""
+    r = EmailRenderer()
+    profiles = [_profile(name="Ann A"), _profile(name="Bob B")]
+    html = r.render(_ctx(total_count=2, new_attendees=profiles, existing_attendees=[], is_initial=True))
+    assert "Ann A" in html
+    assert "Bob B" in html
+    assert "&middot; new" not in html  # initial briefing -> no per-row badge
+    assert "since the last update" not in html  # nor the daily "N new" copy
+
+
+def test_render_daily_digest_badges_new_rows_without_existing_rows():
+    """A daily digest (is_initial=False) with only new attendees and no existing
+    rows must still flag them as new. The earlier proxy (badge only when existing
+    rows present) mislabeled the first daily after an empty-cursor initial as a
+    plain roster — this pins the corrected, signal-driven behavior."""
+    r = EmailRenderer()
+    profiles = [_profile(name="Ann A"), _profile(name="Bob B")]
+    html = r.render(
+        _ctx(total_count=2, new_attendees=profiles, existing_attendees=[], is_initial=False)
+    )
+    assert "&middot; new" in html
+    assert "since the last update" in html
+
+
+def test_render_whitespace_only_answer_shows_placeholder():
+    """A present-but-whitespace answer must collapse to the em-dash placeholder,
+    not a visually-blank cell that's indistinguishable from a dropped value."""
+    r = EmailRenderer()
+    p = _profile(qa=[{"question": "Goals?", "answer": "   \n  "}])
+    html = r.render(_ctx(new_attendees=[p]))
+    assert "Goals?" in html  # column still renders
+    assert ">—</td>" in html  # the answer cell is the placeholder
+
+
+def test_render_includes_sheet_button_only_when_url_present():
+    r = EmailRenderer()
+    url = "https://docs.google.com/spreadsheets/d/abc/edit"
+    with_url = r.render(_ctx(new_attendees=[_profile()], sheet_url=url))
+    assert url in with_url
+    assert "View full attendee sheet" in with_url
+
+    without = r.render(_ctx(new_attendees=[_profile()]))
+    assert "View full attendee sheet" not in without
+
+
+def test_render_rejects_dangerous_sheet_url_scheme():
+    """sheet_url comes from an editable Airtable field, so a javascript:/data:/
+    plain-http value must never become a clickable button. Bad scheme -> the
+    button (and its intro clause) are omitted entirely, fail-safe."""
+    r = EmailRenderer()
+    for bad in ["javascript:alert(1)", "data:text/html,x", "http://docs.google.com/x"]:
+        html = r.render(_ctx(new_attendees=[_profile()], sheet_url=bad))
+        assert "View full attendee sheet" not in html
+        assert bad not in html
+        assert "javascript:" not in html
+
+
+def test_render_rejects_non_google_sheet_host():
+    """We only ever generate Google Sheets, so an off-host https URL (a
+    phishing link slipped into the field) is rejected rather than rendered."""
+    r = EmailRenderer()
+    html = r.render(_ctx(new_attendees=[_profile()], sheet_url="https://evil.example/phish"))
+    assert "View full attendee sheet" not in html
+    assert "evil.example" not in html
+
+
+def test_render_rejects_google_redirector_and_non_sheets_pages():
+    """A google.com hostname alone isn't enough: the open redirector
+    (google.com/url?q=) and non-Sheets Google pages (Docs, Sites) must not
+    render as the canonical 'full attendee sheet' button. Only the
+    docs.google.com/spreadsheets/ shape we actually generate is accepted."""
+    r = EmailRenderer()
+    for bad in [
+        "https://www.google.com/url?q=https://evil.example",
+        "https://docs.google.com/document/d/abc/edit",
+        "https://sites.google.com/view/phish",
+    ]:
+        html = r.render(_ctx(new_attendees=[_profile()], sheet_url=bad))
+        assert "View full attendee sheet" not in html
+
+
+def test_render_rejects_sheet_url_with_embedded_control_chars():
+    """A newline can smuggle a second URL past urlparse, which strips control
+    chars before validating the host. Reject embedded control characters so the
+    off-host URL never reaches the HTML href or the plain-text alternative."""
+    r = EmailRenderer()
+    bad = "https://docs.google.com/spreadsheets/d/abc\nhttps://evil.example/phish"
+    html = r.render(_ctx(new_attendees=[_profile()], sheet_url=bad))
+    assert "View full attendee sheet" not in html
+    assert "evil.example" not in html
+    text = r.render_plain_text(_ctx(new_attendees=[_profile()], sheet_url=bad))
+    assert "evil.example" not in text
+
+
+def test_render_rejects_sheet_url_path_traversal():
+    """A /spreadsheets/../document/ path resolves off the Sheets prefix at
+    navigation time; the strict /spreadsheets/d/ pattern rejects it."""
+    r = EmailRenderer()
+    bad = "https://docs.google.com/spreadsheets/../document/d/abc/edit"
+    html = r.render(_ctx(new_attendees=[_profile()], sheet_url=bad))
+    assert "View full attendee sheet" not in html
+
+
+def test_render_rejects_sheet_url_dot_segment_after_valid_prefix():
+    """A '..' segment AFTER a valid /spreadsheets/d/<id> start still matches the
+    prefix pattern, but the browser normalizes it off the Sheets area at
+    navigation time, so the button could point at any docs.google.com page.
+    Any '..' path segment is rejected regardless of where it appears."""
+    r = EmailRenderer()
+    bad = "https://docs.google.com/spreadsheets/d/abc/../../../document/d/XYZ/edit"
+    html = r.render(_ctx(new_attendees=[_profile()], sheet_url=bad))
+    assert "View full attendee sheet" not in html
+    assert "document/d/XYZ" not in html
+
+
+def test_render_unnamed_attendee_shows_placeholder():
+    """Eventbrite can omit a name entirely; the attendee cell must show
+    '(unnamed)' rather than a blank, identifier-less row."""
+    r = EmailRenderer()
+    p = _profile(name="", qa=[{"question": "Goals?", "answer": "x"}])
+    html = r.render(_ctx(new_attendees=[p]))
+    assert "(unnamed)" in html
+
+
+def test_render_omits_topics_copy_when_no_question_columns():
+    """With no registration questions the table is name-only, so the intro must
+    not promise 'the topics they want you to cover'."""
+    r = EmailRenderer()
+    html = r.render(_ctx(new_attendees=[_profile(qa=[])]))
+    assert "Sarah Smith" in html
+    assert "topics they want you to cover" not in html
+
+
+def test_render_plain_text_preserves_sheet_url():
+    """Text-only clients must still get the sheet link. The plain-text builder
+    emits it on its own line so the URL survives, not just a button label."""
+    r = EmailRenderer()
+    url = "https://docs.google.com/spreadsheets/d/ABC/edit"
+    text = r.render_plain_text(_ctx(new_attendees=[_profile()], sheet_url=url))
+    assert url in text
+    assert "View full attendee sheet" in text
+
+
+def test_render_plain_text_is_legible_per_attendee():
+    """The plain-text alternative is built from structured data, not stripped
+    from the HTML table, so each attendee's answers stay attached to a labeled
+    line instead of running together."""
+    r = EmailRenderer()
+    a = _profile(name="Ann A", qa=[{"question": "Session?", "answer": "Morning"}])
+    b = _profile(name="Bob B", qa=[{"question": "Session?", "answer": "Afternoon"}])
+    text = r.render_plain_text(_ctx(total_count=2, new_attendees=[a, b]))
+    lines = text.splitlines()
+    # Each attendee starts its own line (a daily digest appends " (new)"), each
+    # answer on a labeled line beneath.
+    assert any(line.startswith("Ann A") for line in lines)
+    assert any(line.strip() == "Session?: Morning" for line in lines)
+    assert any(line.strip() == "Session?: Afternoon" for line in lines)
+    assert "<" not in text and ">" not in text
+
+
+def test_render_drops_dead_admin_manage_link():
+    """The old 'Manage this digest' admin link pointed at an unbuilt backend.
+    It must not reappear; the footer offers a reply-to instead."""
+    r = EmailRenderer()
+    html = r.render(_ctx(new_attendees=[_profile()]))
+    assert "Manage this digest" not in html
+    assert "/admin" not in html
+    assert "reply to this email" in html.lower()
 
 
 def test_render_includes_logo_when_logo_url_set():

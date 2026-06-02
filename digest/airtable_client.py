@@ -23,6 +23,7 @@ class FIELD:
     DAYS_OUT = "Days out to start"
     SEND_TIME_ET = "Send time (ET)"
     QUESTION_IDS = "Registration question IDs to include"
+    SHEET_URL = "Attendee sheet URL"
     EVENT_START_ET = "Event start (ET)"
     LAST_DIGEST_SENT_AT = "Last digest sent at"
     LAST_ATTENDEE_CURSOR = "Last attendee cursor"
@@ -78,6 +79,7 @@ class EventRow:
     enabled: bool
     speaker_emails: list[str]
     lead_host_email: str
+    sheet_url: str
     days_out_to_start: int
     send_time_et: str
     question_ids_to_include: list[str]
@@ -102,6 +104,7 @@ class EventRow:
             enabled=bool(f.get(FIELD.ENABLED, False)),
             speaker_emails=_parse_emails(f.get(FIELD.SPEAKER_EMAILS, "") or ""),
             lead_host_email=f.get(FIELD.LEAD_HOST_EMAIL, "") or "",
+            sheet_url=f.get(FIELD.SHEET_URL, "") or "",
             days_out_to_start=_parse_int(
                 f.get(FIELD.DAYS_OUT), 7, record_id=record_id, field_name=FIELD.DAYS_OUT
             ),

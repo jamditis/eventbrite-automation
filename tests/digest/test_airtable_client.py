@@ -108,6 +108,27 @@ def test_list_enabled_returns_event_rows(mock_pyairtable):
     assert row.send_time_et == "07:00"
 
 
+def test_sheet_url_read_from_field(mock_pyairtable):
+    """The per-event 'Attendee sheet URL' drives the briefing's 'view full
+    sheet' button. cron reads it from Airtable rather than generating a sheet
+    in the hot path, so the URL must round-trip onto the row."""
+    mock_pyairtable.records[0]["fields"]["Attendee sheet URL"] = (
+        "https://docs.google.com/spreadsheets/d/ABC/edit"
+    )
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    row = client.list_enabled()[0]
+    assert row.sheet_url == "https://docs.google.com/spreadsheets/d/ABC/edit"
+
+
+def test_sheet_url_defaults_empty_when_absent(mock_pyairtable):
+    """An event with no generated sheet yet has no field — sheet_url is empty,
+    and cron maps that to None so the button is simply omitted."""
+    mock_pyairtable.records[0]["fields"].pop("Attendee sheet URL", None)
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    row = client.list_enabled()[0]
+    assert row.sheet_url == ""
+
+
 def test_speaker_emails_parses_comma_or_newline_separated(mock_pyairtable):
     mock_pyairtable.records[0]["fields"]["Speaker emails"] = "a@x.com\nb@x.com\n c@x.com "
     client = AirtableClient(pat="pat", base_id="base", table_name="Events")
