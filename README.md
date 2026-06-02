@@ -4,6 +4,22 @@ A Python webhook server that automates the creation of Eventbrite event listings
 
 **Live deployment:** This system runs on a Raspberry Pi and processes events for the [Center for Cooperative Media](https://centerforcooperativemedia.org).
 
+## Two subsystems in this repo
+
+1. **Webhook draft creator** (this README) — Airtable form submission → Eventbrite draft listing with an AI banner. Service `eventbrite-automation.service`, config `.env`.
+2. **Attendee digest** — a daily cron that emails event speakers a briefing of who has registered for their session. Service `digest-cron.timer`, config `.env.digest`, code in the `digest/` package. Operations guide: [`docs/operations/digest-runbook.md`](docs/operations/digest-runbook.md).
+
+### Attendee digest first deploy
+
+On houseofjawn, from the repo root:
+
+```bash
+cp deploy/env.example .env.digest   # then fill in the values
+bash deploy/install-digest.sh       # installs and enables digest-cron.timer
+```
+
+The cron fires daily at 07:00 ET. Day-to-day operations, the Airtable state fields, and incident response live in the [digest runbook](docs/operations/digest-runbook.md).
+
 ## Architecture overview
 
 ```

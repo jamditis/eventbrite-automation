@@ -1,6 +1,6 @@
 # Attendee digest runbook
 
-Operational reference for the cron service. Live testing prerequisites + first-deploy checklist live in the README quick-start; this doc is for ongoing operations and incident response.
+Operational reference for the cron service. First-deploy steps live in the README ("Attendee digest first deploy"); this doc is for ongoing operations and incident response.
 
 ## What this does
 
@@ -27,6 +27,7 @@ The cron reads these to decide what to do, and writes them after each tick:
 | `Eventbrite event ID` | read | EB API key for attendee + event fetch. |
 | `Speaker emails` | read | Comma- or newline-separated To-list. |
 | `Lead host email` | read | Reply-To + ledger key. |
+| `Attendee sheet URL` | read | Optional Google Sheet link; renders the "view full attendee sheet" button. Allowlist-sanitized to Google Sheets doc URLs before use. Omit to hide the button. |
 | `Days out to start` | read | Window opens this many days before event start. |
 | `Send time (ET)` | read | Daily fire-no-earlier-than floor. The cron ticks once a day at 07:00 ET, so a value **later than 07:00 means the event never fires** — keep it `<= 07:00` or move the timer's `OnCalendar`. |
 | `Registration question IDs to include` | read | Optional Q&A filter. |
@@ -37,6 +38,15 @@ The cron reads these to decide what to do, and writes them after each tick:
 | `Last attendee cursor` | read, write | Diff key — attendees with `created_at > cursor` are "new." |
 | `Last digest attendee count` | write | Last total registrant count for ops visibility. |
 | `Last error` | write | Cleared on successful send; populated with `{Type}: {message}\n{traceback}` on failure. |
+
+### Standing recipients (Cc/Bcc)
+
+Beyond a row's `Speaker emails` (the visible To-list), every send copies a fixed set configured in `.env.digest`:
+
+- **Cc** — `CC_ALWAYS` (default `info@centerforcooperativemedia.org`). The visible org copy; all recipients see it.
+- **Bcc** — `BCC_ALWAYS` (default `jamditis@gmail.com,etiennec@montclair.edu,advinculaa@montclair.edu`). Hidden copies; the To and Cc recipients never see these addresses.
+
+To change the standing copies, edit those vars in `.env.digest` and restart the timer (see "Editing `.env.digest`" below). The Bcc to `jamditis@gmail.com` is also the delivery check referenced in "Speaker emails not arriving".
 
 ## Common operations
 
@@ -72,17 +82,17 @@ journalctl -u digest-cron.service --since "1 hour ago"
 journalctl -u digest-cron.service -f   # tail live
 ```
 
-## Editing `.env`
+## Editing `.env.digest`
 
-`.env` is loaded by systemd via `EnvironmentFile=`. systemd's parser has specific rules — get them wrong and credentials silently break:
+`.env.digest` is loaded by systemd via `EnvironmentFile=`. systemd's parser has specific rules — get them wrong and credentials silently break:
 
 - One `KEY=value` per line; no shell continuations.
 - **No inline comments.** `KEY=value # note` makes the comment part of the value. Comments must be on their own line, starting with `#`.
 - Trailing whitespace is preserved as part of the value. Strip it.
 - Quoted values: single quotes pass content through literally; double quotes interpret `\n`, `\"`, `\$`. Don't quote unless the value contains a literal `#` (which would otherwise be parsed wrong by some readers — use `KEY='value#with#hash'`).
-- File mode should be `600` so credentials aren't world-readable: `chmod 600 .env`.
+- File mode should be `600` so credentials aren't world-readable: `chmod 600 .env.digest`.
 
-After editing `.env`:
+After editing `.env.digest`:
 
 ```bash
 sudo systemctl restart digest-cron.timer
@@ -93,11 +103,11 @@ journalctl -u digest-cron.service -f   # confirm next tick
 
 ### `ConfigError: missing required env vars`
 
-`.env` isn't being loaded by systemd, or a required key is empty. Check:
+`.env.digest` isn't being loaded by systemd, or a required key is empty. Check:
 
 ```bash
 sudo systemctl cat digest-cron.service | grep EnvironmentFile
-test -s /home/jamditis/projects/eventbrite-automation/.env && echo "ok" || echo "FILE EMPTY OR MISSING"
+test -s /home/jamditis/projects/eventbrite-automation/.env.digest && echo "ok" || echo "FILE EMPTY OR MISSING"
 ```
 
 ### `ModuleNotFoundError: No module named 'digest'`
@@ -115,7 +125,7 @@ sudo systemctl status houseofjawn-dashboard
 
 ### `EB API 401 Unauthorized`
 
-Eventbrite token rotated or revoked. Re-fetch from `pass`, update `.env`, restart timer. (See "Editing .env" above for syntax rules.)
+Eventbrite token rotated or revoked. Re-fetch from `pass`, update `.env.digest`, restart timer. (See "Editing .env.digest" above for syntax rules.)
 
 ### `EventbritePaginationError: ... has_more_items=true with no continuation token`
 
@@ -136,7 +146,7 @@ If the dup is a stale test entry blocking a legit send, `DELETE FROM sends WHERE
 
 ### `email_ledger missing at ... falling back to no-op ledger`
 
-The `houseofjawn-bot/scheduler/email_ledger.py` module isn't installed or isn't on `DIGEST_LEDGER_PATH`. The cron runs anyway, but the cross-session dup safety net is OFF. Primary dup defense (Airtable `Last digest sent at`) still works. To fix: clone `houseofjawn-bot` into `~/projects/`, or set `DIGEST_LEDGER_PATH` in `.env`.
+The `houseofjawn-bot/scheduler/email_ledger.py` module isn't installed or isn't on `DIGEST_LEDGER_PATH`. The cron runs anyway, but the cross-session dup safety net is OFF. Primary dup defense (Airtable `Last digest sent at`) still works. To fix: clone `houseofjawn-bot` into `~/projects/`, or set `DIGEST_LEDGER_PATH` in `.env.digest`.
 
 ### Speaker emails not arriving
 
@@ -187,10 +197,10 @@ If a digest goes out wrong (hallucinated profiles, wrong recipients, broken form
 
 | Credential | Where stored | How to rotate |
 | --- | --- | --- |
-| Eventbrite token | `pass show claude/api/eventbrite/eventbrite-token` | Generate new token in EB account, update pass, redeploy `.env`, restart timer |
-| Airtable PAT | Airtable account settings → tokens | Generate new PAT scoped to `EventDigests` base, update `.env`, restart timer |
-| Dashboard API key | `pass show claude/tokens/dashboard-api` | Rotate via dashboard admin, update pass + `.env`, restart timer |
-| SMTP app password | `pass show gmail-app-password` | Generate new app password in Google account, update pass + `.env`, restart timer |
+| Eventbrite token | `pass show claude/api/eventbrite/eventbrite-token` | Generate new token in EB account, update pass, redeploy `.env.digest`, restart timer |
+| Airtable PAT | Airtable account settings → tokens | Generate new PAT scoped to `EventDigests` base, update `.env.digest`, restart timer |
+| Dashboard API key | `pass show claude/tokens/dashboard-api` | Rotate via dashboard admin, update pass + `.env.digest`, restart timer |
+| SMTP app password | `pass show gmail-app-password` | Generate new app password in Google account, update pass + `.env.digest`, restart timer |
 
 ## What's NOT implemented (MVP scope)
 
