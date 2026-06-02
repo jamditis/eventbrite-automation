@@ -19,13 +19,34 @@ When a bug is reported, don't immediately attempt to fix it. Instead:
 
 ---
 
-This project automates the creation of Eventbrite draft listings from Airtable form submissions, with AI-generated featured images.
+This repo hosts two independent subsystems that share the Eventbrite + Airtable plumbing:
+
+1. **Webhook draft creator** (original) — turns Airtable form submissions into Eventbrite draft listings with AI-generated banners. Runs as `eventbrite-automation.service`, reads `.env`. Documented in the rest of this file.
+2. **Attendee digest** (added 2026-05) — a daily cron that emails event speakers a briefing of who has registered. Runs as `digest-cron.timer`, reads `.env.digest`, lives in the `digest/` package. See the section directly below.
+
+---
+
+## Attendee digest
+
+A once-daily cron that sends each opted-in event's speakers a registration briefing: a one-time initial briefing when staff request it, then daily updates that fire only on days with new signups, going silent and auto-stopping after the event.
+
+- **Runs on:** houseofjawn, `digest-cron.timer` (systemd, daily 07:00 ET). A `git pull` on houseofjawn is the deploy — no build step.
+- **Code:** `digest/` package at the repo root — `cron.py` (orchestrator), `email_renderer.py`, `send_engine.py`, `airtable_client.py`, `config.py`, `profile_builder.py`, `crm_lookup.py`, `eventbrite_client.py`, `llm_subprocess.py`.
+- **Config:** `.env.digest` — NOT `.env` (that belongs to the webhook). Loaded by systemd `EnvironmentFile=` and by `config.py` via python-dotenv.
+- **State:** Airtable `EventDigests` base (`app8ok1uOYxcfYffv`), `Events` table — one row per event. Separate from the webhook's base.
+- **Send model:** setting `Initial briefing requested at` on a row arms the one-shot initial briefing (fires on the next tick regardless of `Enabled`); checking `Enabled` turns on daily digests. Each clears or advances its own state after sending, so neither repeats.
+- **Standing recipients:** every send Bcc's `jamditis@gmail.com`, `etiennec@montclair.edu`, `advinculaa@montclair.edu` and Cc's `info@centerforcooperativemedia.org` (overridable via `BCC_ALWAYS` / `CC_ALWAYS` in `.env.digest`).
+- **Email:** SMTP as `njnewscommons@gmail.com`; the cross-session dup safety net is the email ledger at `~/.claude/workstation/sent-emails.db`.
+- **Tests:** `venv/bin/python -m pytest tests/digest/` (146 as of 2026-06-02).
+- **Ops + incident response:** `docs/operations/digest-runbook.md`. Design spec: `docs/superpowers/specs/2026-05-08-eventbrite-attendee-digest-design.md`.
+
+**Live since 2026-06-02:** the first production briefing went to the Pro News Coaches workshop speakers (June 4 event); daily digests enabled.
 
 ---
 
 ## Deployment status (2026-01-29)
 
-**Fully deployed and operational on Raspberry Pi (houseofjawn)**
+**Webhook draft creator** — fully deployed and operational on Raspberry Pi (houseofjawn)
 
 | Component | Status | Details |
 |-----------|--------|---------|
