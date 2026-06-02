@@ -14,6 +14,12 @@ email body the recipients actually see does NOT contain a "Bcc:" line.
 However, the visible "To" header IS present in the transmitted message and
 visible to ALL recipients (Bcc included). If per-recipient isolation
 matters, the orchestrator must send separate messages.
+
+Cc handling: addresses in `cc_always` set the Cc header. send_message also
+adds them to the envelope recipients (they receive the message), but unlike
+Bcc it leaves the Cc header in place — so every recipient sees the Cc list.
+Use Cc for a copy that should be openly visible (the CCM org inbox), Bcc for
+a private copy.
 """
 from __future__ import annotations
 
@@ -61,6 +67,7 @@ class SendEngine:
         from_name: str,
         from_email: str,
         bcc_always: tuple[str, ...],
+        cc_always: tuple[str, ...],
         ledger: LedgerProtocol,
     ) -> None:
         self._host = smtp_host
@@ -70,6 +77,7 @@ class SendEngine:
         self._from = f"{from_name} <{from_email}>"
         self._from_email = from_email
         self._bcc = bcc_always
+        self._cc = cc_always
         self._ledger = ledger
 
     def send(
@@ -112,6 +120,11 @@ class SendEngine:
         msg = EmailMessage()
         msg["From"] = self._from
         msg["To"] = ", ".join(to)
+        # Cc is the visible standing copy: send_message keeps this header in the
+        # transmitted bytes, so all recipients see it (unlike Bcc, below, which
+        # it strips). Both land in the envelope-to, so both receive the message.
+        if self._cc:
+            msg["Cc"] = ", ".join(self._cc)
         msg["Reply-To"] = reply_to
         msg["Subject"] = subject
         if self._bcc:

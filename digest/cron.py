@@ -361,6 +361,7 @@ def main(dry_run: bool = False) -> None:
             from_name=cfg.smtp_from_name,
             from_email=cfg.smtp_from_email,
             bcc_always=cfg.bcc_always,
+            cc_always=cfg.cc_always,
             ledger=ledger,
         )
         renderer = EmailRenderer()
