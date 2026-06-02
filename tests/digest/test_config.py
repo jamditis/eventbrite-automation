@@ -2,18 +2,34 @@ import pytest
 
 from digest.config import ConfigError, load_config
 
+# All env vars in config.REQUIRED. Centralized here so adding a required var
+# is a one-line change in both the source tuple and this fixture, not a
+# scavenger hunt across every success-path test.
+_REQUIRED_ENV = {
+    "EVENTBRITE_PRIVATE_TOKEN": "tok123",
+    "AIRTABLE_PAT": "pat123",
+    "AIRTABLE_BASE_ID": "appABC",
+    "DASHBOARD_API_KEY": "dash123",
+    "SMTP_PASSWORD": "smtp123",
+    "SMTP_USER": "sender@ccm.example",
+    "SMTP_FROM_EMAIL": "digest@ccm.example",
+}
+
+
+def _set_required(env):
+    for key, value in _REQUIRED_ENV.items():
+        env.setenv(key, value)
+
 
 def test_load_config_reads_env(env):
-    env.setenv("EVENTBRITE_PRIVATE_TOKEN", "tok123")
-    env.setenv("AIRTABLE_PAT", "pat123")
-    env.setenv("AIRTABLE_BASE_ID", "appABC")
-    env.setenv("DASHBOARD_API_KEY", "dash123")
-    env.setenv("SMTP_PASSWORD", "smtp123")
+    _set_required(env)
     cfg = load_config()
     assert cfg.eventbrite_token == "tok123"
     assert cfg.airtable_pat == "pat123"
     assert cfg.airtable_base_id == "appABC"
     assert cfg.smtp_password == "smtp123"
+    assert cfg.smtp_user == "sender@ccm.example"
+    assert cfg.smtp_from_email == "digest@ccm.example"
 
 
 def test_load_config_raises_on_missing_required(env):
@@ -22,12 +38,19 @@ def test_load_config_raises_on_missing_required(env):
         load_config()
 
 
+@pytest.mark.parametrize("missing_key", ["SMTP_USER", "SMTP_FROM_EMAIL"])
+def test_load_config_requires_smtp_identity(env, missing_key):
+    """SMTP_USER and SMTP_FROM_EMAIL must fail fast at load, not at send time:
+    a placeholder would break SMTP auth or the List-Unsubscribe mailto target.
+    """
+    _set_required(env)
+    env.delenv(missing_key, raising=False)
+    with pytest.raises(ConfigError, match=missing_key):
+        load_config()
+
+
 def test_load_config_defaults(env):
-    env.setenv("EVENTBRITE_PRIVATE_TOKEN", "x")
-    env.setenv("AIRTABLE_PAT", "x")
-    env.setenv("AIRTABLE_BASE_ID", "x")
-    env.setenv("DASHBOARD_API_KEY", "x")
-    env.setenv("SMTP_PASSWORD", "x")
+    _set_required(env)
     cfg = load_config()
     assert cfg.smtp_host == "smtp.gmail.com"
     assert cfg.smtp_port == 465
@@ -39,33 +62,21 @@ def test_load_config_defaults(env):
 
 
 def test_load_config_logo_url_override(env):
-    env.setenv("EVENTBRITE_PRIVATE_TOKEN", "x")
-    env.setenv("AIRTABLE_PAT", "x")
-    env.setenv("AIRTABLE_BASE_ID", "x")
-    env.setenv("DASHBOARD_API_KEY", "x")
-    env.setenv("SMTP_PASSWORD", "x")
+    _set_required(env)
     env.setenv("LOGO_URL", "https://example.org/custom-logo.png")
     cfg = load_config()
     assert cfg.logo_url == "https://example.org/custom-logo.png"
 
 
 def test_load_config_raises_config_error_on_invalid_smtp_port(env):
-    env.setenv("EVENTBRITE_PRIVATE_TOKEN", "x")
-    env.setenv("AIRTABLE_PAT", "x")
-    env.setenv("AIRTABLE_BASE_ID", "x")
-    env.setenv("DASHBOARD_API_KEY", "x")
-    env.setenv("SMTP_PASSWORD", "x")
+    _set_required(env)
     env.setenv("SMTP_PORT", "abc")
     with pytest.raises(ConfigError, match="SMTP_PORT"):
         load_config()
 
 
 def test_load_config_parses_bcc_list(env):
-    env.setenv("EVENTBRITE_PRIVATE_TOKEN", "x")
-    env.setenv("AIRTABLE_PAT", "x")
-    env.setenv("AIRTABLE_BASE_ID", "x")
-    env.setenv("DASHBOARD_API_KEY", "x")
-    env.setenv("SMTP_PASSWORD", "x")
+    _set_required(env)
     env.setenv("BCC_ALWAYS", "a@b.com, c@d.com ,  ")
     cfg = load_config()
     assert cfg.bcc_always == ("a@b.com", "c@d.com")

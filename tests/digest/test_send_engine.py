@@ -228,10 +228,145 @@ def test_send_dup_check_keys_off_reply_to_not_to_list(smtp_mock, ledger_mock):
         subject="Subject",
         html_body="x",
         text_body="x",
-        slug="x",
+        slug="ai-newsroom",
     )
     args = ledger_mock.check_duplicate.call_args
     assert args.kwargs.get("recipient") == "lead-host@x.com" or args.args[0] == "lead-host@x.com"
+    # Dedup is keyed on the stable event identity (slug) plus the email kind,
+    # not the volatile subject. Default kind is "digest".
+    assert args.kwargs.get("thread_id") == "ai-newsroom:digest"
+
+
+def test_send_dedup_keyed_on_slug_not_subject(smtp_mock, ledger_mock):
+    """Two distinct events that share a lead host AND an identical subject must
+    not suppress each other: the dedup discriminator is the slug, so different
+    slugs produce different ledger keys even with matching reply_to + subject.
+    """
+    engine = _engine(ledger_mock)
+    common = dict(
+        to=["a@x.com"],
+        reply_to="shared-host@x.com",
+        subject="Weekly roundup — 3 new registrations (10 total)",
+        html_body="x",
+        text_body="x",
+    )
+    engine.send(**common, slug="event-one")
+    engine.send(**common, slug="event-two")
+    thread_ids = [
+        c.kwargs.get("thread_id") for c in ledger_mock.check_duplicate.call_args_list
+    ]
+    assert thread_ids == ["event-one:digest", "event-two:digest"]
+
+
+def test_send_dedup_falls_back_to_subject_when_slug_blank(smtp_mock, ledger_mock):
+    """A row with no slug can't key on identity; fall back to subject (thread_id
+    None) rather than collapsing every slugless event onto an empty thread_id.
+    """
+    engine = _engine(ledger_mock)
+    engine.send(
+        to=["a@x.com"],
+        reply_to="b@x.com",
+        subject="Subject",
+        html_body="x",
+        text_body="x",
+        slug="",
+    )
+    assert ledger_mock.check_duplicate.call_args.kwargs.get("thread_id") is None
+
+
+class _StatefulFakeLedger:
+    """In-memory stand-in that mirrors email_ledger's verified matching contract
+    (houseofjawn-bot/scheduler/email_ledger.py): when thread_id is provided,
+    check_duplicate matches on recipient + thread_id and IGNORES subject;
+    otherwise it matches on recipient + subject. Recipient is lowercased on
+    both store and query, as the real module does.
+
+    A real-ledger import would couple the digest's CI to a sibling repo that
+    isn't checked out there — the same absence the _NoopLedger fallback exists
+    for. This faithful model proves the load-bearing claim the per-call mocks
+    can't: that send() reads with the SAME key it later writes with, so a
+    second send of one event is suppressed while a different event sharing the
+    same reply_to and subject still goes out.
+
+    Out of scope, deliberately: the real ledger also filters on a time window
+    (`sent_at >= now - hours`). This model ignores `hours` because none of
+    these tests advance the clock — don't reuse it for a window-expiry test
+    without adding that filter.
+    """
+
+    def __init__(self):
+        self.rows: list[dict] = []
+
+    def check_duplicate(self, recipient, subject, thread_id=None, hours=6):
+        recipient = recipient.lower()
+        for row in reversed(self.rows):
+            if row["recipient"] != recipient:
+                continue
+            if thread_id is not None:
+                if row["thread_id"] == thread_id:
+                    return row
+            elif row["subject"] == subject:
+                return row
+        return None
+
+    def log_send(self, *, recipient, subject, thread_id=None, **kw):
+        self.rows.append(
+            {"recipient": recipient.lower(), "subject": subject, "thread_id": thread_id}
+        )
+        return len(self.rows)
+
+
+def test_send_dedup_round_trip_against_faithful_ledger(smtp_mock):
+    """End-to-end: the read key must equal the write key. Same event sent twice
+    is blocked; a different event sharing reply_to + subject still sends.
+    """
+    ledger = _StatefulFakeLedger()
+    engine = _engine(ledger)
+    shared = dict(
+        reply_to="host@x.com",
+        subject="Roundup — 3 new (10 total)",
+        html_body="x",
+        text_body="x",
+    )
+
+    first = engine.send(to=["a@x.com"], slug="event-one", **shared)
+    second = engine.send(to=["a@x.com"], slug="event-one", **shared)
+    other = engine.send(to=["a@x.com"], slug="event-two", **shared)
+
+    assert first.sent is True
+    assert second.sent is False and second.reason == "duplicate"
+    assert other.sent is True  # same reply_to + subject, different slug -> not suppressed
+    # SMTP fired for the two real sends, not the suppressed duplicate.
+    assert len(smtp_mock) == 2
+
+
+def test_initial_briefing_does_not_suppress_daily_digest_same_event(smtp_mock):
+    """Regression: initial briefing and daily digest share a slug AND a
+    lead-host reply_to. Keying dedup on the bare slug made a daily digest sent
+    within the ledger window of its initial briefing look like a duplicate, so
+    it never went out (and cron then reconciled Airtable as if it had). The
+    kind suffix in the thread key keeps the two email types distinct.
+    """
+    ledger = _StatefulFakeLedger()
+    engine = _engine(ledger)
+    shared = dict(
+        to=["a@x.com"],
+        reply_to="host@x.com",
+        subject="Same subject text",  # identical subject is the worst case
+        html_body="x",
+        text_body="x",
+        slug="event-one",
+    )
+
+    initial = engine.send(**shared, kind="initial")
+    daily = engine.send(**shared, kind="daily")
+
+    assert initial.sent is True
+    assert daily.sent is True  # different kind -> different thread key -> not suppressed
+    # A genuine same-kind double-fire IS still caught.
+    repeat = engine.send(**shared, kind="daily")
+    assert repeat.sent is False and repeat.reason == "duplicate"
+    assert len(smtp_mock) == 2
 
 
 def test_send_logs_to_ledger_after_successful_send(smtp_mock, ledger_mock):
@@ -249,5 +384,6 @@ def test_send_logs_to_ledger_after_successful_send(smtp_mock, ledger_mock):
     kw = ledger_mock.log_send.call_args.kwargs
     assert kw["recipient"] == "b@x.com"
     assert kw["subject"] == "x"
+    assert kw["thread_id"] == "my-slug:digest"
     assert "my-slug" in kw["context"]
     assert kw["session_type"] == "cron"
