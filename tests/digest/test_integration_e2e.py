@@ -59,6 +59,35 @@ def _attendee(id_, email, name, created):
     )
 
 
+class _StatefulAirtable:
+    """An Airtable stand-in that actually THREADS cursor/sent-at state across
+    ticks, instead of a bare MagicMock whose writes vanish. Lets a multi-tick
+    test PROVE what a reconcile leaves behind (cursor preserved) rather than
+    hand-feeding the next tick's row. MagicMock wrappers keep assert_called_*
+    usable while the side effects mutate the tracked state.
+    """
+
+    def __init__(self, row):
+        self.cursor = row.last_attendee_cursor
+        self.count = row.last_digest_attendee_count
+        self.last_sent_at = row.last_digest_sent_at
+        self.update_after_send = MagicMock(side_effect=self._update_after_send)
+        self.update_after_initial_send = MagicMock(side_effect=self._update_after_send)
+        self.reconcile_after_send = MagicMock(side_effect=self._reconcile)
+        self.reconcile_after_initial_send = MagicMock(side_effect=self._reconcile)
+        self.record_error = MagicMock()
+
+    def _update_after_send(self, row, *, sent_at, attendee_cursor, attendee_count):
+        self.cursor, self.count, self.last_sent_at = attendee_cursor, attendee_count, sent_at
+
+    def _reconcile(self, row, *, sent_at):
+        self.last_sent_at = sent_at  # cursor + count deliberately left untouched
+
+    def sent_at_iso(self):
+        return self.last_sent_at.isoformat() if hasattr(self.last_sent_at, "isoformat") \
+            else self.last_sent_at
+
+
 def test_e2e_initial_briefing_sends_to_speakers_with_all_attendees():
     eb = MagicMock()
     eb.fetch_attendees.return_value = [
@@ -281,10 +310,11 @@ def test_e2e_empty_lead_host_email_aborts_send_and_records_error():
 def test_e2e_ledger_duplicate_reconciles_airtable_state_for_daily():
     """If SMTP succeeded on a prior tick but the Airtable state write failed,
     the next tick hits a ledger duplicate. Treat the duplicate as authoritative
-    proof the email left SMTP and reconcile Airtable — same state writes as a
-    successful send. Without this, last_digest_sent_at + cursor stay stale
-    until the 20h ledger window ages out, then the cron re-sends with the
-    old cursor."""
+    proof the email left SMTP and reconcile last_digest_sent_at so we don't
+    re-send the same calendar day. But do NOT advance the attendee cursor:
+    the duplicate email reflected a PRIOR, older fetch, so advancing to this
+    tick's cursor would silently bury any attendee who registered in the gap
+    (#20). The cursor advance is deferred to the next genuine send."""
     eb = MagicMock()
     eb.fetch_attendees.return_value = [
         _attendee("100001", "old@x.com", "Old One", "2026-05-05T10:00:00Z"),
@@ -316,15 +346,18 @@ def test_e2e_ledger_duplicate_reconciles_airtable_state_for_daily():
     )
 
     sender.send.assert_called_once()
-    airtable.update_after_send.assert_called_once()
-    kw = airtable.update_after_send.call_args.kwargs
+    # Reconcile sent-at only; the cursor must NOT advance to this tick's fetch.
+    airtable.update_after_send.assert_not_called()
+    airtable.reconcile_after_send.assert_called_once()
+    kw = airtable.reconcile_after_send.call_args.kwargs
     assert kw["sent_at"] == now
-    assert kw["attendee_cursor"] == "2026-05-12T10:00:00Z"
-    assert kw["attendee_count"] == 2
 
 
 def test_e2e_ledger_duplicate_reconciles_airtable_state_for_initial():
-    """Same reconciliation logic on the initial-briefing path."""
+    """Same reconciliation on the initial-briefing path: mark the briefing
+    sent (so it can't re-fire) without advancing the attendee cursor, so the
+    first genuine daily digest still covers attendees who registered after
+    the already-sent initial briefing (#20)."""
     eb = MagicMock()
     eb.fetch_attendees.return_value = [
         _attendee("100001", "a@x.com", "Alice", "2026-05-01T10:00:00Z"),
@@ -352,5 +385,136 @@ def test_e2e_ledger_duplicate_reconciles_airtable_state_for_initial():
     )
 
     sender.send.assert_called_once()
-    airtable.update_after_initial_send.assert_called_once()
+    # Reconcile marks the briefing sent without advancing the cursor.
+    airtable.reconcile_after_initial_send.assert_called_once()
+    assert airtable.reconcile_after_initial_send.call_args.kwargs["sent_at"] == now
+    airtable.update_after_initial_send.assert_not_called()
     airtable.update_after_send.assert_not_called()
+
+
+def test_e2e_reconcile_does_not_lose_gap_attendees_on_next_genuine_tick():
+    """#20 end-to-end repro of the silent-data-loss path.
+
+    Sequence:
+      * Tick A sent a daily digest (covering attendees up to 2026-05-11) but
+        its Airtable write failed, so the row's cursor is still the pre-A value
+        (2026-05-10). [modeled by the row's initial state below]
+      * A "gap" attendee registers on 2026-05-12.
+      * Tick B fires within the 20h ledger window -> SendResult duplicate ->
+        reconcile. The bug: reconcile advanced the cursor to 2026-05-12,
+        marking the gap attendee covered though tick A's email predates them.
+      * Tick C (next genuine send) computes new_profiles against the cursor.
+
+    With the fix, tick B does NOT advance the cursor, so tick C still surfaces
+    the gap attendee in the "New registrants" section.
+    """
+    attendees = [
+        _attendee("100001", "sent@x.com", "Already Sent", "2026-05-11T10:00:00Z"),
+        _attendee("100002", "gap@x.com", "Gap Person", "2026-05-12T10:00:00Z"),
+    ]
+    eb = MagicMock()
+    eb.fetch_attendees.return_value = attendees
+    eb.fetch_event.return_value = EventbriteEvent(
+        id="EVT-1", title="x",
+        start_local="2026-05-15T13:00:00", timezone="America/New_York",
+    )
+    crm = MagicMock()
+    crm.find_by_email.return_value = None
+    llm = MagicMock()
+    llm.run_blurb.return_value = None
+    renderer = EmailRenderer()
+
+    # Pre-A cursor: tick A's update_after_send never landed, so the cursor is
+    # stale at 2026-05-10 — behind both "Already Sent" and the gap attendee.
+    # The stateful stand-in threads what each tick actually writes into the
+    # next, so the test proves (not assumes) the reconcile preserved state.
+    row = _row(
+        last_attendee_cursor="2026-05-10T00:00:00Z",
+        last_digest_attendee_count=1,
+        initial_briefing_sent_at="2026-05-08T11:00:00+00:00",
+    )
+    airtable = _StatefulAirtable(row)
+
+    # --- Tick B: ledger duplicate -> reconcile, must NOT advance cursor ---
+    sender_b = MagicMock()
+    sender_b.send.return_value = SendResult(sent=False, reason="duplicate")
+    _run_briefing(
+        row, eb, crm, llm, renderer, sender_b, airtable,
+        datetime(2026, 5, 13, 12, 0, tzinfo=UTC),
+        is_initial=False, dry_run=False,
+    )
+    airtable.update_after_send.assert_not_called()
+    airtable.reconcile_after_send.assert_called_once()
+    # Load-bearing fact: the reconcile left the cursor exactly where it was.
+    # (On the pre-fix code this is 2026-05-12 — the silent skip.)
+    assert airtable.cursor == "2026-05-10T00:00:00Z"
+
+    # --- Tick C: next genuine send, reading the REAL post-B state (cursor
+    # threaded from tick B, not hand-fed). The gap attendee must appear. ---
+    row_c = _row(
+        last_attendee_cursor=airtable.cursor,
+        last_digest_attendee_count=airtable.count,
+        last_digest_sent_at=airtable.sent_at_iso(),
+        initial_briefing_sent_at="2026-05-08T11:00:00+00:00",
+    )
+    sender_c = MagicMock()
+    sender_c.send.return_value = SendResult(sent=True)
+    _run_briefing(
+        row_c, eb, crm, llm, renderer, sender_c, airtable,
+        datetime(2026, 5, 14, 12, 0, tzinfo=UTC),
+        is_initial=False, dry_run=False,
+    )
+    sender_c.send.assert_called_once()
+    body = sender_c.send.call_args.kwargs["html_body"]
+    # The unchanged cursor (2026-05-10) predates every fetched attendee, so
+    # both render as "new" and there is no "Already registered" section — the
+    # deliberate redundancy (#20 accepts re-showing the prior email's
+    # attendees once) in exchange for never silently dropping a gap attendee.
+    new_start = body.index("New registrants")
+    existing_idx = body.find("Already registered")
+    new_section = body[new_start:existing_idx] if existing_idx != -1 else body[new_start:]
+    assert "Gap Person" in new_section, "gap attendee silently dropped from digest (#20)"
+    # Tick C, a real send, advances the cursor past the gap attendee.
+    airtable.update_after_send.assert_called_once()
+    assert airtable.cursor == "2026-05-12T10:00:00Z"
+
+
+def test_e2e_unexpected_non_sent_reason_is_surfaced_not_silently_dropped():
+    """A SendResult(sent=False) whose reason is NOT 'duplicate' must not be a
+    silent no-op. send_engine only returns 'duplicate' today (all real SMTP
+    failures raise and are caught upstream), but a future reason string
+    (e.g. 'throttled') should surface via Last error + a log warning instead
+    of leaving the row in stale state with no trace and no cursor write."""
+    eb = MagicMock()
+    eb.fetch_attendees.return_value = [
+        _attendee("100001", "a@x.com", "Alice Anon", "2026-05-12T10:00:00Z"),
+    ]
+    eb.fetch_event.return_value = EventbriteEvent(
+        id="EVT-1", title="x",
+        start_local="2026-05-15T13:00:00", timezone="America/New_York",
+    )
+    crm = MagicMock()
+    crm.find_by_email.return_value = None
+    llm = MagicMock()
+    llm.run_blurb.return_value = None
+    sender = MagicMock()
+    sender.send.return_value = SendResult(sent=False, reason="throttled")
+    airtable = MagicMock()
+    renderer = EmailRenderer()
+    now = datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
+    row = _row(
+        last_attendee_cursor="2026-05-10T00:00:00Z",
+        initial_briefing_sent_at="2026-05-08T11:00:00+00:00",
+    )
+
+    _run_briefing(
+        row, eb, crm, llm, renderer, sender, airtable, now,
+        is_initial=False, dry_run=False,
+    )
+
+    # Not sent and not a duplicate: write nothing to cursor/sent-at, but DO
+    # record the anomaly so an unexpected result isn't swallowed.
+    airtable.update_after_send.assert_not_called()
+    airtable.reconcile_after_send.assert_not_called()
+    airtable.record_error.assert_called_once()
+    assert "throttled" in airtable.record_error.call_args.args[1]
