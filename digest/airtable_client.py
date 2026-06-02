@@ -201,6 +201,50 @@ class AirtableClient:
             },
         )
 
+    def reconcile_after_send(self, row: EventRow, *, sent_at: datetime) -> None:
+        """Record a daily digest as sent WITHOUT advancing the attendee cursor.
+
+        Used on a ledger duplicate-reconcile: the ledger proves an email left
+        SMTP on a PRIOR tick, but that email reflected an OLDER cursor than
+        this tick's Eventbrite fetch. Advancing the cursor to this tick's fetch
+        (as `update_after_send` does) would mark attendees who registered in
+        the gap between the real send and now as "covered" though they never
+        appeared in any digest — silent data loss (#20).
+
+        So write only `last_digest_sent_at` (to suppress an immediate same-day
+        re-send) and clear `last_error`. The cursor/count stay put, so the next
+        genuine send re-evaluates new attendees against the unchanged cursor
+        and picks up the gap attendees (at the cost of re-showing the prior
+        email's attendees once — redundancy is preferable to silent loss).
+        """
+        self._table.update(
+            row.record_id,
+            {
+                FIELD.LAST_DIGEST_SENT_AT: sent_at.isoformat(),
+                FIELD.LAST_ERROR: "",
+            },
+        )
+
+    def reconcile_after_initial_send(self, row: EventRow, *, sent_at: datetime) -> None:
+        """Reconcile the initial-briefing path on a ledger duplicate.
+
+        Marks the briefing sent (`initial_briefing_sent_at`) and clears the
+        request so it can't re-fire, and sets `last_digest_sent_at` to suppress
+        a same-day daily — but, like `reconcile_after_send`, leaves the
+        attendee cursor/count untouched (#20). The first genuine daily digest
+        then still covers attendees who registered after the already-sent
+        briefing rather than skipping them.
+        """
+        self._table.update(
+            row.record_id,
+            {
+                FIELD.LAST_DIGEST_SENT_AT: sent_at.isoformat(),
+                FIELD.INITIAL_BRIEFING_SENT_AT: sent_at.isoformat(),
+                FIELD.INITIAL_BRIEFING_REQUESTED_AT: None,
+                FIELD.LAST_ERROR: "",
+            },
+        )
+
     def record_error(self, row: EventRow, message: str) -> None:
         self._table.update(row.record_id, {FIELD.LAST_ERROR: message[:_LAST_ERROR_MAX]})
 

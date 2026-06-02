@@ -179,6 +179,46 @@ def test_update_after_initial_send_writes_all_six_fields_in_one_call(mock_pyairt
     assert fields["Last error"] == ""
 
 
+def test_reconcile_after_send_sets_only_sent_at_not_cursor(mock_pyairtable):
+    """#20: a duplicate-reconcile must NOT advance the attendee cursor or
+    count. The email it reconciles left SMTP on a PRIOR tick against an OLDER
+    cursor; writing this tick's cursor would mark gap attendees (registered
+    between the real send and now) as covered though they never appeared in
+    the email. Set only last_digest_sent_at + clear last_error, so the next
+    genuine tick re-evaluates new attendees against the unchanged cursor.
+    """
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    rows = client.list_enabled()
+    client.reconcile_after_send(rows[0], sent_at=datetime(2026, 5, 8, 11, 0, tzinfo=UTC))
+    assert len(mock_pyairtable.update_calls) == 1
+    fields = mock_pyairtable.update_calls[0]["fields"]
+    assert fields["Last digest sent at"] == "2026-05-08T11:00:00+00:00"
+    assert fields["Last error"] == ""
+    # The cursor + count fields must NOT be written — that's the whole point.
+    assert "Last attendee cursor" not in fields
+    assert "Last digest attendee count" not in fields
+
+
+def test_reconcile_after_initial_send_marks_sent_without_advancing_cursor(mock_pyairtable):
+    """#20 on the initial-briefing path: the reconcile sets
+    initial-briefing-sent-at (+ clears the request) so the briefing can't
+    re-fire, and sets last_digest_sent_at, but leaves the attendee
+    cursor/count untouched so the first genuine daily digest still covers
+    attendees who registered after the already-sent initial briefing.
+    """
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    rows = client.list_enabled()
+    client.reconcile_after_initial_send(rows[0], sent_at=datetime(2026, 5, 8, 11, 0, tzinfo=UTC))
+    assert len(mock_pyairtable.update_calls) == 1
+    fields = mock_pyairtable.update_calls[0]["fields"]
+    assert fields["Last digest sent at"] == "2026-05-08T11:00:00+00:00"
+    assert fields["Initial briefing sent at"] == "2026-05-08T11:00:00+00:00"
+    assert fields["Initial briefing requested at"] is None
+    assert fields["Last error"] == ""
+    assert "Last attendee cursor" not in fields
+    assert "Last digest attendee count" not in fields
+
+
 def test_mark_initial_briefing_sent(mock_pyairtable):
     client = AirtableClient(pat="pat", base_id="base", table_name="Events")
     rows = client.list_enabled()

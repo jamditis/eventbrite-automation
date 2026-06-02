@@ -266,16 +266,29 @@ def _run_briefing(
 
     # The ledger is canonical for "did email leave SMTP" — log_send fires
     # immediately after smtp.send_message succeeds. So a `duplicate` reason
-    # means the email DID go out on a prior tick, just that the Airtable
-    # state write didn't follow. Reconcile Airtable now using the same
-    # write path as a successful send. Without this branch, stale Airtable
-    # state survives until the 20h ledger window ages out, after which the
-    # cron would re-send with the old cursor.
-    if result.sent or result.reason == "duplicate":
-        if not result.sent:
-            logger.warning(
-                "ledger duplicate for %s; reconciling Airtable state", row.slug
-            )
+    # means the email DID go out on a PRIOR tick; only the Airtable state
+    # write didn't follow.
+    if not result.sent and result.reason == "duplicate":
+        # Reconcile the sent-at marker so we don't re-send the same calendar
+        # day, but do NOT advance the attendee cursor. The duplicate email
+        # reflected an older fetch; advancing to THIS tick's cursor would mark
+        # any attendee who registered in the gap between that send and now as
+        # covered though they never appeared in a digest — silent loss (#20).
+        # The next genuine send advances the cursor against the unchanged
+        # value and picks up the gap attendees.
+        logger.warning(
+            "ledger duplicate for %s; reconciling sent-at without advancing cursor",
+            row.slug,
+        )
+        if is_initial:
+            airtable.reconcile_after_initial_send(row, sent_at=now)
+        else:
+            airtable.reconcile_after_send(row, sent_at=now)
+        return
+
+    # A genuine send (this tick's email reflects this tick's fetch) advances
+    # the cursor to the latest attendee so the next tick diffs against it.
+    if result.sent:
         max_cursor = max((p.created_at for p in profiles), default=cursor or "")
         if is_initial:
             airtable.update_after_initial_send(
@@ -285,6 +298,15 @@ def _run_briefing(
             airtable.update_after_send(
                 row, sent_at=now, attendee_cursor=max_cursor, attendee_count=len(profiles)
             )
+    else:
+        # Not sent, and not the duplicate-reconcile handled above. send_engine
+        # only returns sent=False with reason="duplicate" today (real SMTP
+        # failures raise and are caught by the per-row handler), so this is
+        # unreachable now — but a future reason string must not become a silent
+        # no-op that leaves the row in stale state with no trace. Surface it.
+        msg = f"send returned sent=False reason={result.reason!r} for {row.slug}; no state written"
+        logger.warning(msg)
+        airtable.record_error(row, msg)
 
 
 def main(dry_run: bool = False) -> None:
