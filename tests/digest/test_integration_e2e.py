@@ -28,6 +28,7 @@ def _row(**overrides) -> EventRow:
         enabled=True,
         speaker_emails=["panelist@example.com"],
         lead_host_email="host@example.com",
+        sheet_url="",
         days_out_to_start=7,
         send_time_et="07:00",
         question_ids_to_include=[],
@@ -136,6 +137,46 @@ def test_e2e_initial_briefing_sends_to_speakers_with_all_attendees():
     airtable.clear_initial_briefing_request.assert_not_called()
 
 
+def test_e2e_briefing_includes_sheet_button_from_row_sheet_url():
+    """The Airtable 'Attendee sheet URL' must thread through cron into the
+    rendered email's 'view full sheet' button; an empty field omits it. This
+    pins the wiring so the button can't silently regress to always-off."""
+    eb = MagicMock()
+    eb.fetch_attendees.return_value = [
+        _attendee("100001", "sarah@example.com", "Sarah Smith", "2026-05-01T10:00:00Z"),
+    ]
+    eb.fetch_event.return_value = EventbriteEvent(
+        id="EVT-1", title="Test event",
+        start_local="2026-05-15T13:00:00", timezone="America/New_York",
+    )
+    crm = MagicMock()
+    crm.find_by_email.return_value = None
+    llm = MagicMock()
+    llm.run_blurb.return_value = None
+    renderer = EmailRenderer()
+    now = datetime(2026, 5, 8, 12, 0, tzinfo=UTC)
+
+    sender = MagicMock()
+    sender.send.return_value = SendResult(sent=True)
+    _run_briefing(
+        _row(sheet_url="https://docs.google.com/spreadsheets/d/XYZ/edit"),
+        eb, crm, llm, renderer, sender, MagicMock(), now,
+        is_initial=True, dry_run=False,
+    )
+    body = sender.send.call_args.kwargs["html_body"]
+    assert "https://docs.google.com/spreadsheets/d/XYZ/edit" in body
+    assert "View full attendee sheet" in body
+
+    sender2 = MagicMock()
+    sender2.send.return_value = SendResult(sent=True)
+    _run_briefing(
+        _row(sheet_url=""),
+        eb, crm, llm, renderer, sender2, MagicMock(), now,
+        is_initial=True, dry_run=False,
+    )
+    assert "View full attendee sheet" not in sender2.send.call_args.kwargs["html_body"]
+
+
 def test_e2e_daily_digest_silent_when_no_new_attendees():
     eb = MagicMock()
     eb.fetch_attendees.return_value = [
@@ -209,17 +250,19 @@ def test_e2e_daily_digest_with_new_attendees_sends_only_new_in_new_section():
     sender.send.assert_called_once()
     body = sender.send.call_args.kwargs["html_body"]
 
-    # Section-bounded assertion: new attendees ONLY appear in the
-    # "New registrants" section; old attendees ONLY in "Already registered".
-    new_section_start = body.index("New registrants")
-    existing_section_start = body.index("Already registered")
-    new_section = body[new_section_start:existing_section_start]
-    existing_section = body[existing_section_start:]
+    # New design: one at-a-glance table, every attendee present. New attendees
+    # since the cursor are flagged with a "new" badge; existing ones are not.
+    rows = body.split("<tr")
 
-    assert "New One" in new_section and "New One" not in existing_section
-    assert "New Two" in new_section and "New Two" not in existing_section
-    assert "Old One" in existing_section and "Old One" not in new_section
-    assert "Old Two" in existing_section and "Old Two" not in new_section
+    def row_for(name: str) -> str:
+        return next(r for r in rows if name in r)
+
+    assert "New One" in body and "New Two" in body
+    assert "Old One" in body and "Old Two" in body
+    assert "&middot; new" in row_for("New One")
+    assert "&middot; new" in row_for("New Two")
+    assert "&middot; new" not in row_for("Old One")
+    assert "&middot; new" not in row_for("Old Two")
 
     # The cursor advances past the latest attendee
     update_kwargs = airtable.update_after_send.call_args.kwargs
@@ -466,14 +509,12 @@ def test_e2e_reconcile_does_not_lose_gap_attendees_on_next_genuine_tick():
     )
     sender_c.send.assert_called_once()
     body = sender_c.send.call_args.kwargs["html_body"]
-    # The unchanged cursor (2026-05-10) predates every fetched attendee, so
-    # both render as "new" and there is no "Already registered" section — the
-    # deliberate redundancy (#20 accepts re-showing the prior email's
-    # attendees once) in exchange for never silently dropping a gap attendee.
-    new_start = body.index("New registrants")
-    existing_idx = body.find("Already registered")
-    new_section = body[new_start:existing_idx] if existing_idx != -1 else body[new_start:]
-    assert "Gap Person" in new_section, "gap attendee silently dropped from digest (#20)"
+    # Gap Person registered after the prior (reconciled) send but before this
+    # tick. Against the unchanged cursor (#20), they must still appear in this
+    # digest rather than being silently marked covered — the deliberate
+    # redundancy that trades re-showing prior attendees once for never
+    # dropping a gap attendee.
+    assert "Gap Person" in body, "gap attendee silently dropped from digest (#20)"
     # Tick C, a real send, advances the cursor past the gap attendee.
     airtable.update_after_send.assert_called_once()
     assert airtable.cursor == "2026-05-12T10:00:00Z"

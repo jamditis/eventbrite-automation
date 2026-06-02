@@ -79,6 +79,7 @@ def _engine(ledger_mock, **overrides):
         from_name="Center for Cooperative Media",
         from_email="sender@example.com",
         bcc_always=("joe@example.com", "cassandra@example.com"),
+        cc_always=(),
         ledger=ledger_mock,
     )
     base.update(overrides)
@@ -184,6 +185,47 @@ def test_send_includes_well_formed_list_unsubscribe_header(smtp_mock, ledger_moc
     assert m, f"List-Unsubscribe not in valid mailto-URI form: {lu!r}"
     assert m.group(1) == "sender@example.com"
     assert m.group(2) == "unsubscribe%20ai-newsroom-march-2026"
+
+
+def test_cc_addresses_receive_and_remain_visible(smtp_mock, ledger_mock):
+    """Cc is the inverse of Bcc: send_message keeps the Cc header in the
+    transmitted bytes (every recipient sees who was copied) while the Cc address
+    still lands in the envelope-to (it receives the message). Bcc from the same
+    send stays hidden — proving the two coexist correctly in one message.
+    """
+    engine = _engine(ledger_mock, cc_always=("info@centerforcooperativemedia.org",))
+    engine.send(
+        to=["panelist@example.com"],
+        reply_to="host@example.com",
+        subject="Test",
+        html_body="<p>hi</p>",
+        text_body="hi",
+        slug="x",
+    )
+    msg = smtp_mock[0].captured["send_message_msgs"][0]
+    assert msg["Cc"] == "info@centerforcooperativemedia.org"
+    sm = smtp_mock[0].captured["sendmail_calls"][0]
+    # Cc recipient receives the message (in envelope-to)...
+    assert "info@centerforcooperativemedia.org" in sm["to_addrs"]
+    # ...and is visible in the transmitted bytes, unlike Bcc.
+    assert "info@centerforcooperativemedia.org" in sm["msg_str"]
+    # Bcc from the default engine stays hidden in the same message.
+    assert "joe@example.com" in sm["to_addrs"]
+    assert "joe@example.com" not in sm["msg_str"]
+
+
+def test_send_omits_cc_header_when_no_cc_configured(smtp_mock, ledger_mock):
+    engine = _engine(ledger_mock, cc_always=())
+    engine.send(
+        to=["a@x.com"],
+        reply_to="b@x.com",
+        subject="x",
+        html_body="x",
+        text_body="x",
+        slug="x",
+    )
+    msg = smtp_mock[0].captured["send_message_msgs"][0]
+    assert msg["Cc"] is None
 
 
 def test_send_omits_bcc_header_when_no_bcc_configured(smtp_mock, ledger_mock):

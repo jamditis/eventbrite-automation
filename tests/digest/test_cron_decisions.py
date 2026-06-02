@@ -19,6 +19,7 @@ def _row(**overrides):
         enabled=True,
         speaker_emails=["a@x.com"],
         lead_host_email="h@x.com",
+        sheet_url="",
         days_out_to_start=7,
         send_time_et="07:00",
         question_ids_to_include=[],

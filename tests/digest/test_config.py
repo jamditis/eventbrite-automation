@@ -80,3 +80,31 @@ def test_load_config_parses_bcc_list(env):
     env.setenv("BCC_ALWAYS", "a@b.com, c@d.com ,  ")
     cfg = load_config()
     assert cfg.bcc_always == ("a@b.com", "c@d.com")
+
+
+def test_load_config_bcc_default_includes_standing_recipients(env):
+    """With BCC_ALWAYS unset, the standing org recipients are copied on every
+    digest: Joe, Cassandra, and advinculaa."""
+    _set_required(env)
+    env.delenv("BCC_ALWAYS", raising=False)
+    cfg = load_config()
+    assert cfg.bcc_always == (
+        "jamditis@gmail.com",
+        "etiennec@montclair.edu",
+        "advinculaa@montclair.edu",
+    )
+
+
+def test_load_config_parses_cc_list(env):
+    _set_required(env)
+    env.setenv("CC_ALWAYS", "x@y.com, z@w.com ,  ")
+    cfg = load_config()
+    assert cfg.cc_always == ("x@y.com", "z@w.com")
+
+
+def test_load_config_cc_default_copies_ccm_inbox(env):
+    """With CC_ALWAYS unset, the CCM org inbox is the standing visible copy."""
+    _set_required(env)
+    env.delenv("CC_ALWAYS", raising=False)
+    cfg = load_config()
+    assert cfg.cc_always == ("info@centerforcooperativemedia.org",)

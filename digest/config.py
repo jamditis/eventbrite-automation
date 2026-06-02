@@ -40,6 +40,7 @@ class Config:
     smtp_from_email: str
     logo_url: str
     bcc_always: tuple[str, ...]
+    cc_always: tuple[str, ...]
     gemini_bin: str
     codex_bin: str
     codex_model: str
@@ -67,10 +68,18 @@ def load_config() -> Config:
     if missing:
         raise ConfigError(f"missing required env vars: {', '.join(missing)}")
 
+    # bcc_always = hidden standing recipients copied on every digest (Joe,
+    # Cassandra, advinculaa). cc_always = the visible standing copy (the CCM
+    # org inbox), which all recipients see. Both are overridable per-deploy via
+    # the env vars; the defaults encode the current standing intent.
     bcc_raw = os.environ.get(
-        "BCC_ALWAYS", "jamditis@gmail.com,etiennec@montclair.edu"
+        "BCC_ALWAYS",
+        "jamditis@gmail.com,etiennec@montclair.edu,advinculaa@montclair.edu",
     )
     bcc_always = tuple(addr.strip() for addr in bcc_raw.split(",") if addr.strip())
+
+    cc_raw = os.environ.get("CC_ALWAYS", "info@centerforcooperativemedia.org")
+    cc_always = tuple(addr.strip() for addr in cc_raw.split(",") if addr.strip())
 
     smtp_port_raw = os.environ.get("SMTP_PORT", "465")
     try:
@@ -99,6 +108,7 @@ def load_config() -> Config:
             "LOGO_URL", "https://summit.collaborativejournalism.org/ccm-logo.png"
         ),
         bcc_always=bcc_always,
+        cc_always=cc_always,
         gemini_bin=os.environ.get("GEMINI_BIN", "gemini"),
         codex_bin=os.environ.get("CODEX_BIN", "codex"),
         codex_model=os.environ.get("CODEX_MODEL", "gpt-5.4-low"),

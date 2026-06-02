@@ -92,9 +92,9 @@ def _ctx_daily() -> RenderContext:
         total_count=7,
         new_attendees=_fixture_new_profiles(),
         existing_attendees=_existing_profiles(5),
-        admin_url="https://pages.centerforcooperativemedia.org/events/ai-newsroom/admin",
         subject="AI in the newsroom — 2 new registrations (7 total)",
         logo_url=None,
+        sheet_url="https://docs.google.com/spreadsheets/d/EXAMPLE/edit",
     )
 
 
@@ -121,9 +121,10 @@ def _ctx_initial() -> RenderContext:
         total_count=len(new),
         new_attendees=new,
         existing_attendees=[],
-        admin_url="https://pages.centerforcooperativemedia.org/events/ai-newsroom/admin",
         subject="AI in the newsroom — initial attendee briefing (5 total)",
         logo_url=None,
+        sheet_url="https://docs.google.com/spreadsheets/d/EXAMPLE/edit",
+        is_initial=True,
     )
 
 
