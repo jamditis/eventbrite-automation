@@ -344,7 +344,12 @@ def cron_tick(now: datetime) -> None:
 def decide_and_dispatch(row, now):
     # 1. One-shot initial briefing fires first, regardless of Enabled.
     if has_pending_initial_briefing(row):   # requested_at set, sent_at not
-        run_initial_briefing(row, now)       # sends, then sets sent_at + clears requested_at atomically
+        run_initial_briefing(row, now)       # sends, then one atomic write (update_after_initial_send):
+                                             #   sets initial_briefing_sent_at, clears requested_at, AND
+                                             #   persists last_digest_sent_at + attendee_cursor + count.
+                                             #   The cursor/count are not optional: without them the first
+                                             #   daily digest restarts from an empty cursor and re-includes
+                                             #   everyone the briefing already covered.
         return
     # 2. Daily-digest path is gated on Enabled and on the initial briefing
     #    having already gone out.
@@ -449,7 +454,11 @@ Each `/api/*` route is a small Pages Function that:
 
 ### Initial briefing trigger
 
-`POST /api/airtable/events/[slug]/initial-briefing` patches the row's `Initial briefing requested at` field with the current timestamp — a plain Airtable write, no Redis and no pub/sub. The houseofjawn cron polls the field on every tick: any row where `Initial briefing requested at` is set and `Initial briefing sent at` is not sends an immediate initial briefing (regardless of `Enabled`), then sets `sent at` and clears `requested at` in one atomic write. There is no immediacy guarantee tighter than the cron cadence; a request is picked up on the next tick.
+`POST /api/airtable/events/[slug]/initial-briefing` patches the row's `Initial briefing requested at` field with the current timestamp — a plain Airtable write, no Redis and no pub/sub. The houseofjawn cron polls the field on every tick: any row where `Initial briefing requested at` is set and `Initial briefing sent at` is not sends the initial briefing (regardless of `Enabled`), then sets `sent at` and clears `requested at` in one atomic write.
+
+The pickup is bounded by the cron cadence, and that cadence is once a day. The deployed timer (`deploy/digest-cron.timer`) ticks once at 07:00 America/New_York, so a briefing armed after the morning tick is not picked up until the next day's 07:00 run unless someone starts the service by hand. The admin UI must set this expectation — "sends on the next daily run", not "sends now."
+
+Resend is not a re-arm of `requested at` alone. Once `Initial briefing sent at` is populated, the cron filter (`NOT({Initial briefing sent at})`) and `has_pending_initial_briefing` both stop selecting the row, so writing `requested at` again does nothing. A real resend endpoint must clear `Initial briefing sent at` (and set `requested at`) so the row re-enters the pending set; otherwise the Resend button in the admin UI is a dead no-op. The shipped code has no resend path yet — it lives behind the deferred admin UI — so the resend contract is documented here, not built.
 
 Resolved in favor of polling over the brain-coordinator Redis path during the writing-plans phase (plan Task 21). The consumer side already ships and runs in production: the gate is `digest/cron.py` (`initial_briefing_requested_at and not initial_briefing_sent_at`) and the Airtable filter in `digest/airtable_client.py`. So the only Phase 5 work left here is the Pages Function that writes the field — and because the trigger is just a field write, a staff member can already arm a briefing by setting `Initial briefing requested at` directly in Airtable, which is the v1 path while the admin UI is deferred.
 
