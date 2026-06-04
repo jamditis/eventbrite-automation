@@ -401,7 +401,7 @@ def decide_and_dispatch(row, now):
 7. email_ledger.check_duplicate → abort if duplicate
 8. SMTP send via njnewscommons
 9. email_ledger.log_send(...)
-10. airtable.update_row(...)
+10. airtable.update_after_send(...)        # update_after_initial_send(...) on the initial-briefing path
 ```
 
 ### Concurrency / locking
@@ -495,12 +495,12 @@ Minimal: event title, date/time, automation on/off, total registrants, "Daily br
 | EB API 5xx / timeout | `eventbrite_client.fetch_attendees` | Retry 3x exp backoff (1s/4s/16s); fail row, write `Last error`, continue cron | Yes (admin banner) |
 | EB rate limit (429) | Same | Sleep until next tick. No retry within tick | No |
 | EB auth (401) | Same | Hard fail tick + Telegram alert | Yes |
-| CRM lookup network error | `profile_builder._lookup_crm` | Treat as "not in CRM," skip enrichment, continue | No |
-| gemini CLI fail / validation fail | `profile_builder._enrich` | Fall back: codex CLI → deterministic template | No |
-| SMTP auth failure | `send_engine.dispatch` | Fail row, `Last error`, Telegram alert | Yes |
+| CRM lookup network error | `crm_lookup.find_by_email` | Treat as "not in CRM," skip enrichment, continue | No |
+| gemini CLI fail / validation fail | `llm_subprocess.run_blurb` | Fall back: codex CLI → deterministic template | No |
+| SMTP auth failure | `send_engine.send` | Fail row, `Last error`, Telegram alert | Yes |
 | SMTP transient | Same | Retry 3x within tick. Defer if still failing | No |
 | Email ledger says duplicate | Same | Abort send, log warning, do NOT update `Last digest sent at` | No |
-| Airtable write fails after send | `cron.update_row_after_send` | Log, Telegram alert (ledger has record) | Yes |
+| Airtable write fails after send | `airtable.update_after_send` / `update_after_initial_send` | Log, Telegram alert (ledger has record) | Yes |
 | Airtable read fails on tick startup | `airtable.list_active` | Hard fail + Telegram on 2nd consecutive | Yes |
 | File lock contention | Cron startup | Log + clean exit | No |
 | CF Access JWT verification fails | Pages Function | Return 401, browser sees CF Access login | Yes |
