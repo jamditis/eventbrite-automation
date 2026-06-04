@@ -66,7 +66,7 @@ These were not in the original spec or the 2026-05-22 recon and they reshape the
 
 ## Current prod baseline (regression fixture, measured 2026-06-04)
 
-Capture this as the cutover regression target: the gate is **no path that is 200 today may regress to non-200 after cutover**, plus the submodule paths are expected to *improve* from 404 to 200.
+Capture this as the cutover regression target: the gate is **no path that is 200 today may regress to non-200 after cutover**, plus the submodule paths are expected to *improve* from 404 to 200 **for any section Joe clears for public release** (open question #3). A section Joe chooses to keep dark is allowed to stay 404 and is not a regression.
 
 | Path | Prod (GH Pages) | Note |
 |---|---|---|
@@ -82,10 +82,10 @@ Capture this as the cutover regression target: the gate is **no path that is 200
 | `/edit/` | 200 | |
 | `/demoday/demoday-insights-2025.html` | 200 | directory root 404s; named file is the live path |
 | `/weekender/weekender-2025-template.html` | 200 | directory root 404s; named file is the live path |
-| `/njcic/` | 404 | submodule — expect **200** on CF (improvement) |
+| `/njcic/` | 404 | submodule — **200** on CF if cleared for public release (open question #3); stays 404 if Joe keeps it dark |
 | `/tools/` | 404 | submodule, no index — stays 404 unless an index is added |
-| `/cjs2026/` | 404 | submodule — expect **200** on CF (improvement) |
-| `/cjs-beat-street/` | 404 | submodule — expect **200** on CF (improvement) |
+| `/cjs2026/` | 404 | submodule — **200** on CF if cleared for public release (open question #3); stays 404 if Joe keeps it dark |
+| `/cjs-beat-street/` | 404 | submodule — **200** on CF if cleared for public release (open question #3); stays 404 if Joe keeps it dark |
 | `/fellowships/`, `/programs/`, `/internal-tools/`, `/reports/` | 404 | no index document — not live paths; drop from gate |
 
 Re-run this sweep against the fresh preview in 0a and against prod in 0c.
@@ -98,16 +98,17 @@ Re-run this sweep against the fresh preview in 0a and against prod in 0c.
 - [ ] Clean and scope the `ccm` working tree first — it carries submodule-pointer drift plus untracked dirs (e.g. `social-scraper/` round-2 artifacts, `docs/`, `prompts/`). The migration touches only deploy config; do not sweep unrelated content into it.
 - [ ] Redeploy `ccm-pages` from current `main` (`bash deploy.sh`, or the CI build settings with `git submodule update --init --recursive`).
 - [ ] Confirm the events cron is firing and succeeding — `gh run list --workflow=update-events.yml -R jamditis/ccm --limit 10` should show recent `schedule`-triggered runs with `success` conclusions, not just an absence of commits (see finding 5; commit history cannot prove the cron is alive).
-- [ ] Re-run the baseline sweep against `ccm-pages.pages.dev`. **Acceptance:** every path that is 200 on prod today is 200 on the preview; submodule roots (`/njcic/`, `/cjs2026/`, `/cjs-beat-street/`) are 200; decide and record the `.html` clean-URL behavior (accept the 308s or suppress them).
+- [ ] Re-run the baseline sweep against `ccm-pages.pages.dev`. **Acceptance:** every path that is 200 on prod today returns **200, or — for the `.html` paths, if clean URLs are accepted (open question #2) — a 308 to a 200 destination** on the preview; submodule roots (`/njcic/`, `/cjs2026/`, `/cjs-beat-street/`) are 200 **only for the sections Joe clears for public release (open question #3)** and may stay 404 otherwise; decide and record the `.html` clean-URL behavior (accept the 308s or suppress them).
 
-### Phase 0b — DNS cutover
+### Phase 0b — deploy automation and DNS cutover
 
 - [ ] Add `pages.centerforcooperativemedia.org` as a custom domain on the `ccm-pages` project (in the zone's account).
-- [ ] Repoint DNS: `pages.*` CNAME from `jamditis.github.io` to the Pages target, proxied (orange cloud) so Access can later enforce. **Acceptance:** `curl -sI https://pages.centerforcooperativemedia.org/ | grep "server: cloudflare"` returns the header (this is exactly the check the digest plan's Phase 5 Task 17 runs), TLS is valid, and the baseline sweep shows no regression on the walkthrough.
+- [ ] **Wire the Cloudflare Pages deploy on push to `main` BEFORE flipping DNS.** This must precede cutover, not follow it: prod is about to point at Cloudflare, and the daily `update-events.yml` auto-commit (`cron: 0 6 * * *`) would otherwise refresh only the now-dark GitHub Pages origin, so prod goes stale on the first events commit after cutover (finding 4). Confirm the deploy fires by pushing a no-op commit to `main` and watching the Cloudflare Pages build succeed before proceeding. **Keep `pages.yml` building GitHub Pages in parallel** — it is the warm rollback target, so do not stop or delete it.
+- [ ] Repoint DNS: `pages.*` CNAME from `jamditis.github.io` to the Pages target, proxied (orange cloud) so Access can later enforce. **Acceptance:** `curl -sI https://pages.centerforcooperativemedia.org/ | grep "server: cloudflare"` returns the header (this is exactly the check the digest plan's Phase 5 Task 17 runs) **and** the custom domain shows as Active on the `ccm-pages` project (Cloudflare dashboard, or `wrangler pages project list` / the Pages API). The proxy header alone is not sufficient — an orange-clouded record still pointing at `jamditis.github.io` also returns `server: cloudflare`, so prove the origin is Pages, not just that traffic is proxied (a Pages-only signal works too: a path GitHub Pages cannot serve, e.g. a cleared submodule root returning 200). TLS is valid, and the baseline sweep shows no regression on the walkthrough.
 
 ### Phase 0c — soak
 
-- [ ] Add a Cloudflare Pages deploy on push to `main` so the daily events auto-commit ships to Cloudflare. **Keep `pages.yml` building GitHub Pages in parallel through the soak** — it is the warm rollback target, so do not stop or delete it at soak start. A stale GitHub Pages artifact would turn rollback from a one-line DNS flip into a rebuild.
+- [ ] Keep `pages.yml` building GitHub Pages in parallel through the soak — it is the warm rollback target, so do not stop or delete it at soak start. A stale GitHub Pages artifact would turn rollback from a one-line DNS flip into a rebuild. (The Cloudflare-on-push deploy is already live from Phase 0b.)
 - [ ] **Acceptance:** clean Cloudflare Pages deploy logs, the full baseline sweep returns the expected codes against prod, at least one CCM staffer other than Joe confirms no regression in their workflow, and no inbound bug reports.
 - [ ] **Only after acceptance passes:** retire `pages.yml` (the GitHub Pages deploy). Until then it stays live as the rollback target.
 
