@@ -37,7 +37,7 @@ A once-daily cron that sends each opted-in event's speakers a registration brief
 - **Send model:** setting `Initial briefing requested at` on a row arms the one-shot initial briefing (fires on the next tick regardless of `Enabled`); checking `Enabled` turns on daily digests. Each clears or advances its own state after sending, so neither repeats.
 - **Standing recipients:** every send Bcc's `jamditis@gmail.com`, `etiennec@montclair.edu`, `advinculaa@montclair.edu` and Cc's `info@centerforcooperativemedia.org` (overridable via `BCC_ALWAYS` / `CC_ALWAYS` in `.env.digest`).
 - **Email:** SMTP as `njnewscommons@gmail.com`; the cross-session dup safety net is the email ledger at `~/.claude/workstation/sent-emails.db`.
-- **Tests:** `venv/bin/python -m pytest tests/digest/` (146 as of 2026-06-02).
+- **Tests:** `venv/bin/python -m pytest tests/digest/` (156 as of 2026-06-04). Includes `test_spec_symbols.py`, which fails the build if the design spec names a `module.method` that no longer exists in `digest/` (the guard against spec drift that issue #27 surfaced).
 - **Ops + incident response:** `docs/operations/digest-runbook.md`. Design spec: `docs/superpowers/specs/2026-05-08-eventbrite-attendee-digest-design.md`.
 
 **Live since 2026-06-02:** the first production briefing went to the Pro News Coaches workshop speakers (June 4 event); daily digests enabled.
