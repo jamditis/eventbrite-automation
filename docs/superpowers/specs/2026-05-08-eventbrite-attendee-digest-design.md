@@ -70,12 +70,14 @@ We need an automation that emails an event's speakers/hosts a daily digest of re
         └──────────────────────────────────────────────────────────────────────┘
 ```
 
+> The diagram above is the original pre-pivot sketch: it names the standalone `eventbrite-attendee-digest` repo (folded into this repo since — see the note at the top) and an **every-30-min** cron. The shipped cadence is **once daily at 07:00 ET** via a systemd timer — see [Schedule on houseofjawn](#schedule-on-houseofjawn). Treat the repo layout and the 30-min cadence in the diagram as historical.
+
 ### Logical components
 
 1. **Eventbrite attendee fetcher** — extends `eventbrite_client.py` (currently zero attendee logic). Calls `GET /events/{id}/attendees/`, walks `pagination.continuation`, returns attendees including `answers[]` and `cancelled` flag.
 2. **Profile builder** — for each attendee: pulls form answers, CRM lookup via dashboard, conditional gemini CLI enrichment (CRM-matched only), output validation, fallback chain.
 3. **Email renderer + send engine** — Jinja2 HTML template + auto-generated plain-text alternative. SMTP via njnewscommons. `email_ledger` for duplicate guard + send record.
-4. **Cron scheduler** — single houseofjawn cron entry, every 30 minutes. Reads Airtable, evaluates per-event window + send-time + already-sent-today + initial-briefing-sent.
+4. **Cron scheduler** — single houseofjawn systemd timer, once daily at 07:00 ET. Reads Airtable, evaluates per-event window + send-time + already-sent-today + initial-briefing-sent.
 5. **Admin UI + Pages Functions proxy** — static HTML form at `/events/[slug]/admin`, behind CF Access. Pages Functions at `/api/airtable/*` hold the Airtable PAT. Public viewer at `/events/[slug]/` shows minimal status.
 
 ## Phase 0: Cloudflare Pages migration (prerequisite)
@@ -111,7 +113,9 @@ Treat as separate PR from any digest code. Reviewable on its own merits by anyon
 | `Send time (ET)` | Single line text, `HH:MM` | Default `07:00`. |
 | `Registration question IDs to include` | Long text | Comma-separated EB question IDs. Empty = include all. |
 
-### System fields (cron writes, staff reads, UI doesn't let edit)
+### System fields (cron-managed state, not admin-form inputs)
+
+These rows are written and advanced by cron, not entered through the admin event form. The one exception is `Initial briefing requested at`: it is a staff-set *trigger* (the admin button via its Pages Function, or a manual Airtable edit while the UI is deferred) that cron reads and then clears — a "system field" by storage but staff-authored by ownership. See its note below and the trigger section.
 
 | Field | Type | Notes |
 |---|---|---|
@@ -309,19 +313,29 @@ SMTP: `gmail-app-password` from pass (njnewscommons app password). Standard `smt
 
 ### Initial briefing variant
 
-Same template. "New registrants" section contains everyone currently registered; "Already registered" section is suppressed entirely. Subject uses the "initial attendee briefing" form. Fires once, gated by `Initial briefing sent at` field. Resend prompts for explicit confirmation.
+Same template. "New registrants" section contains everyone currently registered; "Already registered" section is suppressed entirely. Subject uses the "initial attendee briefing" form. Fires once, gated by `Initial briefing sent at` field. Resend is a deferred admin-UI feature, not built yet; when added it prompts for explicit confirmation and must clear `Initial briefing sent at` to re-arm — see the trigger section for the contract.
 
 ## Cron scheduler + send engine
 
-### Cron entry on houseofjawn
+### Schedule on houseofjawn
+
+The digest runs as a systemd timer (`deploy/digest-cron.timer` + `deploy/digest-cron.service`), not a crontab line. It ticks **once daily at 07:00 America/New_York**:
 
 ```
-*/30 * * * * cd /home/jamditis/projects/eventbrite-attendee-digest && \
-  /usr/bin/timeout --foreground 600 \
-  ./.venv/bin/python -m digest.cron >> /var/log/digest-cron.log 2>&1
+# digest-cron.timer
+[Timer]
+OnCalendar=*-*-* 07:00:00 America/New_York
+Persistent=true
+Unit=digest-cron.service
+
+# digest-cron.service
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/timeout --foreground 600 \
+  /home/jamditis/projects/eventbrite-automation/venv/bin/python -m digest.cron
 ```
 
-`timeout --foreground` mandatory per Joe's hard-won lesson. 600s ceiling = 5x worst-case headroom.
+`timeout --foreground` mandatory per Joe's hard-won lesson; 600s ceiling = 5x worst-case headroom. The earlier `*/30 * * * *` crontab (every 30 min) was retired — it ran 48 times a day for a single daily send. Two consequences of the once-a-day tick: `Send time (ET)` is a fire-no-earlier-than floor, so an event whose send time is later than 07:00 never clears the gate (keep per-event send times <= 07:00, or move `OnCalendar` later); and a transient per-event failure (EB 429, SMTP) is retried on the next day's tick, not 30 minutes later.
 
 ### Per-tick decision logic
 
@@ -337,7 +351,8 @@ def cron_tick(now: datetime) -> None:
         try:
             decide_and_dispatch(row, now)
         except Exception as e:
-            airtable.record_error(row, format_exc(e))   # writes truncated Last error
+            msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()[:1500]}"
+            airtable.record_error(row, msg)   # truncated type+message+traceback → Last error
             logger.exception(f"failed for event {row.slug}")
             # CRITICAL: continue. One event's failure cannot block others.
 
@@ -415,7 +430,7 @@ No state file on the Pi. Everything between runs lives in Airtable. Pi-rebuild s
 | `/events/new` | CF Access SSO | EB event picker for opt-in |
 | `/api/airtable/events` | CF Access SSO + Function | List + create |
 | `/api/airtable/events/[slug]` | CF Access SSO + Function | Get + patch + delete |
-| `/api/airtable/events/[slug]/initial-briefing` | CF Access SSO + Function | POST: trigger immediate digest |
+| `/api/airtable/events/[slug]/initial-briefing` | CF Access SSO + Function | POST: arm the initial briefing (consumed on the next daily tick) |
 | `/api/eventbrite/upcoming` | CF Access SSO + Function | List upcoming CCM-organizer events |
 
 ### Cloudflare Access policy
@@ -424,7 +439,7 @@ One Access application targeting `pages.centerforcooperativemedia.org/events/*/a
 
 ### Admin form fields
 
-Status block (read-only): Enabled toggle, Last digest sent, Last digest count, Initial briefing sent + Resend button.
+Status block (read-only): Enabled toggle, Last digest sent, Last digest count, Initial briefing sent + Resend button. This whole admin UI (the Resend button included) is deferred — not shipped yet; see the trigger section for the resend contract it must honor.
 
 Recipients: Speaker emails (textarea, comma or newline separated), Lead host email.
 
