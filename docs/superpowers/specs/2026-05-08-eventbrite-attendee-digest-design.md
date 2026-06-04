@@ -119,7 +119,8 @@ Treat as separate PR from any digest code. Reviewable on its own merits by anyon
 | `Last digest sent at` | Date + time | Empty = never sent. Used for "already sent today?" check. |
 | `Last attendee cursor` | Single line text | ISO timestamp of most-recently-`created` attendee included in any digest. Diff baseline. |
 | `Last digest attendee count` | Number | Total registered as of last successful run. |
-| `Initial briefing sent at` | Date + time | Set when staff clicks "Send initial briefing now." Empty = button hasn't fired. |
+| `Initial briefing requested at` | Date + time | Set when a staff member fires the initial briefing — the admin button (via its Pages Function) or a manual Airtable edit while the UI is deferred. Cron polls for this on every tick and sends regardless of `Enabled`; cleared atomically when the briefing sends. The polling signal — see the trigger section. |
+| `Initial briefing sent at` | Date + time | Set by cron when the initial briefing actually sends; clears `requested at` in the same write. Empty = not sent yet. The two fields together gate "already sent?". |
 | `Last error` | Long text | Populated on failure, cleared on next success. Surfaces as admin UI banner. |
 
 ### Out of schema (deliberately)
@@ -326,26 +327,37 @@ Same template. "New registrants" section contains everyone currently registered;
 
 ```python
 def cron_tick(now: datetime) -> None:
-    rows = airtable.list_enabled_events()
-    for row in rows:
+    # list_active() selects the rows this tick should consider:
+    #   OR({Enabled} = TRUE(), AND({Initial briefing requested at},
+    #                              NOT({Initial briefing sent at})))
+    # A pending initial briefing is included regardless of Enabled, so a
+    # staff-requested briefing on a not-yet-enabled draft still fires rather
+    # than silently never firing.
+    for row in airtable.list_active():
         try:
             decide_and_dispatch(row, now)
         except Exception as e:
-            airtable.update_row(row.id, {"Last error": format_exc(e)})
+            airtable.record_error(row, format_exc(e))   # writes truncated Last error
             logger.exception(f"failed for event {row.slug}")
             # CRITICAL: continue. One event's failure cannot block others.
 
 def decide_and_dispatch(row, now):
-    if row.event_start_et < now:
-        return  # event over
-    if (row.event_start_et - now).days > row.days_out_to_start:
-        return  # outside window
+    # 1. One-shot initial briefing fires first, regardless of Enabled.
+    if has_pending_initial_briefing(row):   # requested_at set, sent_at not
+        run_initial_briefing(row, now)       # sends, then sets sent_at + clears requested_at atomically
+        return
+    # 2. Daily-digest path is gated on Enabled and on the initial briefing
+    #    having already gone out.
+    if not row.enabled:
+        return
+    if not _now_in_window(row, now):         # event over, or outside the days-out window
+        return
     if not _is_past_send_time_today(row.send_time_et, now):
         return  # not yet today
     if _already_sent_today(row.last_digest_sent_at, now):
         return  # idempotent
     if not row.initial_briefing_sent_at:
-        return  # daily digests gated on initial briefing
+        return  # daily digests gate on the initial briefing
     run_daily_digest(row, now)
 ```
 
@@ -353,7 +365,7 @@ def decide_and_dispatch(row, now):
 
 1. **One digest per calendar day per event.** Calendar-date-in-ET, not 24h rolling.
 2. **Send-time is a floor, not target.** `>= send_time` triggers; missed precision is fine.
-3. **No daily digest before initial briefing.** Even if window + send-time match, nothing fires until human-pressed button has set `Initial briefing sent at`.
+3. **No daily digest before the initial briefing.** Even if window + send-time match, the daily path holds until the initial briefing has actually sent — i.e. cron has set `Initial briefing sent at`. The briefing itself is armed separately by `Initial briefing requested at` (the staff trigger; see the trigger section) and fires regardless of `Enabled`.
 4. **Email ledger as second-line guard.** Before SMTP send, `email_ledger.check_duplicate(recipient=lead_host, subject, hours=20)`. If duplicate, abort and log warning.
 
 ### Send sequence
@@ -437,9 +449,9 @@ Each `/api/*` route is a small Pages Function that:
 
 ### Initial briefing trigger
 
-`POST /api/airtable/events/[slug]/initial-briefing` writes to a Redis pub/sub channel that houseofjawn subscribes to (existing `brain-coordinator` infrastructure). Cron has small subscriber that triggers immediate digest run for one event row. Falls back to "scheduled run will pick this up within 30 min" message if Redis is unreachable.
+`POST /api/airtable/events/[slug]/initial-briefing` patches the row's `Initial briefing requested at` field with the current timestamp — a plain Airtable write, no Redis and no pub/sub. The houseofjawn cron polls the field on every tick: any row where `Initial briefing requested at` is set and `Initial briefing sent at` is not sends an immediate initial briefing (regardless of `Enabled`), then sets `sent at` and clears `requested at` in one atomic write. There is no immediacy guarantee tighter than the cron cadence; a request is picked up on the next tick.
 
-(Open question for implementation: whether Redis trigger is worth the complexity vs. polling Airtable for an `Initial briefing requested at` field on every cron tick. Decide in writing-plans phase.)
+Resolved in favor of polling over the brain-coordinator Redis path during the writing-plans phase (plan Task 21). The consumer side already ships and runs in production: the gate is `digest/cron.py` (`initial_briefing_requested_at and not initial_briefing_sent_at`) and the Airtable filter in `digest/airtable_client.py`. So the only Phase 5 work left here is the Pages Function that writes the field — and because the trigger is just a field write, a staff member can already arm a briefing by setting `Initial briefing requested at` directly in Airtable, which is the v1 path while the admin UI is deferred.
 
 ### Public viewer at `/events/[slug]/`
 
@@ -465,7 +477,7 @@ Minimal: event title, date/time, automation on/off, total registrants, "Daily br
 | SMTP transient | Same | Retry 3x within tick. Defer if still failing | No |
 | Email ledger says duplicate | Same | Abort send, log warning, do NOT update `Last digest sent at` | No |
 | Airtable write fails after send | `cron.update_row_after_send` | Log, Telegram alert (ledger has record) | Yes |
-| Airtable read fails on tick startup | `cron.list_enabled_events` | Hard fail + Telegram on 2nd consecutive | Yes |
+| Airtable read fails on tick startup | `airtable.list_active` | Hard fail + Telegram on 2nd consecutive | Yes |
 | File lock contention | Cron startup | Log + clean exit | No |
 | CF Access JWT verification fails | Pages Function | Return 401, browser sees CF Access login | Yes |
 | Pages Function can't reach Airtable | Pages Function | Return 502, UI shows red banner with retry button | Yes |
@@ -508,7 +520,7 @@ Minimal: event title, date/time, automation on/off, total registrants, "Daily br
 - Exact CCM logo asset for email header (verify in `~/projects/ccm-pages`)
 - Whether `eventbrite-automation` repo absorbs this code or new sibling repo (probably sibling — different cadence, deps, deploy story)
 - Canonical Cassandra address for BCC: `etiennec@montclair.edu` vs `etiennec@mail.montclair.edu`
-- Initial briefing trigger: brain-coordinator Redis pub/sub vs polling for Airtable field change
+- ~~Initial briefing trigger: brain-coordinator Redis pub/sub vs polling for Airtable field change~~ — resolved: polling (see the trigger section).
 
 ## v1 acceptance criteria
 
