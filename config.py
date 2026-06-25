@@ -44,6 +44,10 @@ EVENTBRITE_PRIVATE_TOKEN = _pass("claude/eventbrite/eventbrite-token") or os.get
 EVENTBRITE_API_BASE = "https://www.eventbriteapi.com/v3"
 # CCM organizer profile ID (not the Rutgers/RIIPL one)
 EVENTBRITE_ORGANIZER_ID = "5988913981"
+# CCM organization ID — used in the create-event URL. The token's organization
+# list now returns a blank-named org first that the token cannot create under
+# (403), so we pin CCM rather than relying on list order. See issue #32.
+EVENTBRITE_ORGANIZATION_ID = "66857244479"
 
 # CCM brand settings
 CCM_BRAND = {
