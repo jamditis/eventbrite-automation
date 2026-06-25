@@ -16,7 +16,9 @@ from config import (
     EVENTBRITE_PRIVATE_TOKEN,
     EVENTBRITE_API_BASE,
     EVENTBRITE_ORGANIZER_ID,
+    EVENTBRITE_ORGANIZATION_ID,
     EVENT_DEFAULTS,
+    CCM_BRAND,
 )
 from airtable_client import EventRecord
 
@@ -55,20 +57,42 @@ class EventbriteClient:
         return self._organization_id
 
     def _fetch_organization_id(self) -> str:
-        """Fetch the organization ID for the authenticated user."""
+        """Resolve the CCM organization ID for event creation.
+
+        The token's organization list returns a blank-named org first that the
+        token cannot create events under (403), so we do not rely on list order.
+        Prefer the pinned CCM organization, fall back to a name match on the CCM
+        brand, then the first org. See issue #32.
+        """
         response = requests.get(
             f"{self.base_url}/users/me/organizations/",
             headers=self.headers,
         )
         response.raise_for_status()
-        data = response.json()
+        orgs = response.json().get("organizations", [])
 
-        if not data.get("organizations"):
+        if not orgs:
             raise ValueError("No organizations found for this account")
 
-        # Use the first organization
-        org_id = data["organizations"][0]["id"]
-        print(f"Using organization ID: {org_id}")
+        # 1. Pinned CCM organization, if the token can see it.
+        if EVENTBRITE_ORGANIZATION_ID:
+            for org in orgs:
+                if org.get("id") == EVENTBRITE_ORGANIZATION_ID:
+                    print(f"Using organization ID: {org['id']} ({org.get('name')})")
+                    return org["id"]
+            raise ValueError(
+                f"Configured organization {EVENTBRITE_ORGANIZATION_ID} is not "
+                "accessible to this token; check the token's account access."
+            )
+
+        # 2. Fall back to the CCM brand name, then the first org.
+        for org in orgs:
+            if org.get("name") == CCM_BRAND["name"]:
+                print(f"Using organization ID: {org['id']} ({org.get('name')})")
+                return org["id"]
+
+        org_id = orgs[0]["id"]
+        print(f"Using organization ID: {org_id} (fallback to first org)")
         return org_id
 
     def upload_image(self, image_path: Path) -> str:
