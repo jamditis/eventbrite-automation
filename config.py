@@ -101,6 +101,13 @@ EVENT_DEFAULTS = {
     "default_duration_hours": 2,
     "default_ticket_quantity": 100,
     "default_ticket_name": "General Admission",
+    # Categorize new drafts so they don't land uncategorized in Eventbrite.
+    # These IDs fit most CCM events (data and policy briefings for journalists);
+    # override per event in the Eventbrite editor when a different bucket fits.
+    # Blank either value to skip setting it. IDs are from the Eventbrite
+    # taxonomy: format 2 = "Seminar or Talk", category 112 = "Government & Politics".
+    "format_id": "2",
+    "category_id": "112",
 }
 
 # Airtable field mapping

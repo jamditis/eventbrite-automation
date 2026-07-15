@@ -216,6 +216,15 @@ class EventbriteClient:
             }
         }
 
+        # Categorize the draft so it doesn't land uncategorized (the create API
+        # otherwise leaves format and category blank, so every event had to be
+        # sorted by hand). Defaults suit most CCM events; edit in the Eventbrite
+        # editor when a specific event fits a different bucket.
+        if EVENT_DEFAULTS.get("format_id"):
+            event_payload["event"]["format_id"] = EVENT_DEFAULTS["format_id"]
+        if EVENT_DEFAULTS.get("category_id"):
+            event_payload["event"]["category_id"] = EVENT_DEFAULTS["category_id"]
+
         # Add venue for in-person events
         if not event.is_virtual and event.location:
             print(f"  Location: {event.location}")
