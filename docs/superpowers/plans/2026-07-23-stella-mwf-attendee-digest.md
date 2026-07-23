@@ -298,11 +298,12 @@ git commit -m "feat: honor event weekdays before digest sends"
 **Files:**
 
 - Modify: `deploy/create-airtable-base.py`
+- Create: `tests/digest/test_airtable_schema.py`
 - Modify: `docs/operations/digest-runbook.md`
 - Modify: `docs/superpowers/specs/2026-05-08-eventbrite-attendee-digest-design.md`
 - Modify: `CLAUDE.md`
 
-- [ ] **Step 1: Add the field to new-base creation**
+- [x] **Step 1: Add the field to new-base creation**
 
 Place this immediately after `Send time (ET)` in `EVENTS_FIELDS`:
 
@@ -317,7 +318,7 @@ Place this immediately after `Send time (ET)` in `EVENTS_FIELDS`:
 },
 ```
 
-- [ ] **Step 2: Document the decision path and operator format**
+- [x] **Step 2: Document the decision path and operator format**
 
 Add `Send weekdays` to the runbook state table:
 
@@ -331,21 +332,32 @@ next configured weekday, and M/W/F is entered as `Mon,Wed,Fri`.
 Add the same field to the original digest design's Airtable schema table and
 the attendee-digest summary in `CLAUDE.md`.
 
-- [ ] **Step 3: Run formatting and spec-symbol checks**
+- [x] **Step 3: Run lint, focused formatting, and spec-symbol checks**
 
 ```bash
-venv/bin/ruff format digest tests deploy/create-airtable-base.py
-venv/bin/ruff check digest tests deploy/create-airtable-base.py
+venv/bin/ruff check \
+  digest/airtable_client.py digest/cron.py \
+  tests/digest/test_airtable_client.py \
+  tests/digest/test_cron_decisions.py \
+  tests/digest/test_integration_e2e.py \
+  tests/digest/test_airtable_schema.py \
+  deploy/create-airtable-base.py
+venv/bin/ruff format --check \
+  tests/digest/test_airtable_schema.py \
+  tests/digest/test_cron_decisions.py
 venv/bin/python -m pytest tests/digest/test_spec_symbols.py -v
 git diff --check
 ```
 
 Expected: Ruff and spec-symbol checks pass; `git diff --check` prints nothing.
+The repo-wide formatter check is excluded because the current Ruff version
+would rewrite 20 pre-existing files outside this feature.
 
-- [ ] **Step 4: Commit schema and documentation**
+- [x] **Step 4: Commit schema and documentation**
 
 ```bash
 git add deploy/create-airtable-base.py \
+  tests/digest/test_airtable_schema.py \
   docs/operations/digest-runbook.md \
   docs/superpowers/specs/2026-05-08-eventbrite-attendee-digest-design.md \
   CLAUDE.md

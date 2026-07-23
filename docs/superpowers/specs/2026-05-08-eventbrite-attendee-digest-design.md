@@ -111,6 +111,7 @@ Treat as separate PR from any digest code. Reviewable on its own merits by anyon
 | `Lead host email` | Email | `Reply-To` target. |
 | `Days out to start` | Number | Default 7. Daily digests begin this many days before event start. |
 | `Send time (ET)` | Single line text, `HH:MM` | Default `07:00`. |
+| `Send weekdays` | Single line text | Optional comma-separated `Mon` through `Sun`. Blank preserves the every-calendar-day default. |
 | `Registration question IDs to include` | Long text | Comma-separated EB question IDs. Empty = include all. |
 
 ### System fields (cron-managed state, not admin-form inputs)
