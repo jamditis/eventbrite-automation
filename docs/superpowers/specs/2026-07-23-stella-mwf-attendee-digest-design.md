@@ -20,8 +20,8 @@ The production digest service currently supports a per-event start window and se
 - The global `digest-cron.timer` remains daily at 7 a.m. Eastern.
 - Follow-up digests remain silent when no one new has registered.
 - The event-start gate continues to stop delivery after the webinar begins.
-- No email may be sent, test-sent, enabled, or armed until Joe reviews the
-  rendered production-data preview and gives fresh explicit approval.
+- Test emails may go only to `jamditis@gmail.com`.
+- No email may go to Stella until Joe reviews and approves the test results.
 
 For this webinar, the expected opportunities are:
 
@@ -71,17 +71,27 @@ Add this event row:
 | Event slug | `healthcare-costs-nj-2026-07-30` |
 | Event title | `Using public data to report on rising healthcare costs in New Jersey` |
 | Eventbrite event ID | `1994018922274` |
-| Enabled | No until Joe approves the rendered preview |
-| Speaker emails | `smach@branchfour.org` |
-| Lead host email | `info@centerforcooperativemedia.org` |
+| Enabled | No during testing |
+| Speaker emails | `jamditis@gmail.com` during testing; `smach@branchfour.org` after Joe approves |
+| Lead host email | `jamditis@gmail.com` during testing; `info@centerforcooperativemedia.org` for live delivery |
 | Days out to start | `7` |
 | Send time (ET) | `07:00` |
 | Send weekdays | `Mon,Wed,Fri` |
 | Registration question IDs to include | `322741553` |
 | Event start (ET) | `2026-07-30T18:00:00.000Z` |
-| Initial briefing requested at | Leave blank until Joe approves the rendered preview |
+| Initial briefing requested at | Set only for an approved test or live send |
 
 The attendee sheet URL remains blank because no event-specific sheet was supplied. Standing Cc and Bcc recipients remain controlled by `.env.digest`.
+
+Using Joe as both the test recipient and test Reply-To keeps the email-ledger
+key separate from live delivery. The ledger keys on Reply-To plus
+`event-slug:kind`, so the test cannot suppress the later live initial briefing
+after Reply-To changes to `info@centerforcooperativemedia.org`.
+
+Manual test sends must start the cron with empty `CC_ALWAYS` and `BCC_ALWAYS`
+environment overrides. This prevents the production standing copies from
+receiving a test intended only for Joe. The live systemd environment remains
+unchanged.
 
 ## Error handling
 
@@ -110,14 +120,21 @@ Run the full digest suite, Ruff checks, a production-data dry run with SMTP disa
 
 1. Deploy the tested branch to the production checkout on houseofjawn.
 2. Add `Send weekdays` to the Airtable table.
-3. Add the webinar row without the initial request timestamp.
+3. Add the webinar row with `jamditis@gmail.com` as the test recipient and
+   test Reply-To, disabled, and without the initial request timestamp.
 4. Run `digest.cron --dry-run` and inspect the rendered recipient, event, attendee count, question answer, and weekday decision.
-5. Show Joe the rendered preview and wait for fresh explicit approval. The
-   broader session approval does not authorize an email send.
-6. Only after that approval, enable the row and set `Initial briefing requested
-   at` so the next eligible run sends it.
-7. Confirm the timer is active and the next eligible trigger.
-8. After the first approved run, verify the systemd exit status, Airtable sent
+5. Run the manual test with `CC_ALWAYS=` and `BCC_ALWAYS=` so only
+   `jamditis@gmail.com` receives it. Verify the process result, Airtable state,
+   and email-ledger record.
+6. Show Joe the rendered email and test evidence. Wait for explicit approval
+   before changing the recipient to Stella.
+7. After approval, reset `Initial briefing sent at`, `Last digest sent at`,
+   `Last attendee cursor`, and `Last digest attendee count`; change Speaker
+   emails to `smach@branchfour.org`; change Lead host email to
+   `info@centerforcooperativemedia.org`; set `Enabled`; and arm the initial
+   briefing.
+8. Confirm the timer is active and the next eligible trigger.
+9. After the first live run, verify the systemd exit status, Airtable sent
    fields, and email-ledger record.
 
 ## Research notes
