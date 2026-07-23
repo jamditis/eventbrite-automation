@@ -22,6 +22,7 @@ class FIELD:
     LEAD_HOST_EMAIL = "Lead host email"
     DAYS_OUT = "Days out to start"
     SEND_TIME_ET = "Send time (ET)"
+    SEND_WEEKDAYS = "Send weekdays"
     QUESTION_IDS = "Registration question IDs to include"
     SHEET_URL = "Attendee sheet URL"
     EVENT_START_ET = "Event start (ET)"
@@ -70,6 +71,37 @@ def _parse_question_ids(raw: str) -> list[str]:
     return [p.strip() for p in raw.split(",") if p.strip()]
 
 
+_WEEKDAYS = {
+    "mon": 0,
+    "monday": 0,
+    "tue": 1,
+    "tuesday": 1,
+    "wed": 2,
+    "wednesday": 2,
+    "thu": 3,
+    "thursday": 3,
+    "fri": 4,
+    "friday": 4,
+    "sat": 5,
+    "saturday": 5,
+    "sun": 6,
+    "sunday": 6,
+}
+
+
+def _parse_send_weekdays(raw: str, *, record_id: str) -> frozenset[int] | None:
+    if not raw or not raw.strip():
+        return None
+    tokens = [token.strip() for token in raw.split(",") if token.strip()]
+    invalid = [token for token in tokens if token.lower() not in _WEEKDAYS]
+    if invalid:
+        raise EventRowSchemaError(
+            f"record {record_id}: field {FIELD.SEND_WEEKDAYS!r} "
+            f"contains unknown weekday {invalid[0]!r}"
+        )
+    return frozenset(_WEEKDAYS[token.lower()] for token in tokens)
+
+
 @dataclass
 class EventRow:
     record_id: str
@@ -90,6 +122,7 @@ class EventRow:
     initial_briefing_sent_at: str | None
     initial_briefing_requested_at: str | None
     last_error: str
+    send_weekdays: frozenset[int] | None = None
     raw_fields: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -109,6 +142,10 @@ class EventRow:
                 f.get(FIELD.DAYS_OUT), 7, record_id=record_id, field_name=FIELD.DAYS_OUT
             ),
             send_time_et=f.get(FIELD.SEND_TIME_ET, "07:00") or "07:00",
+            send_weekdays=_parse_send_weekdays(
+                f.get(FIELD.SEND_WEEKDAYS, "") or "",
+                record_id=record_id,
+            ),
             question_ids_to_include=_parse_question_ids(f.get(FIELD.QUESTION_IDS, "") or ""),
             event_start_et=f.get(FIELD.EVENT_START_ET),
             last_digest_sent_at=f.get(FIELD.LAST_DIGEST_SENT_AT),

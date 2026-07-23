@@ -106,6 +106,26 @@ def test_list_enabled_returns_event_rows(mock_pyairtable):
     assert row.speaker_emails == ["panelist1@example.com", "panelist2@example.com"]
     assert row.days_out_to_start == 7
     assert row.send_time_et == "07:00"
+    assert row.send_weekdays == frozenset({0, 2, 4})
+
+
+def test_send_weekdays_blank_preserves_daily_default(mock_pyairtable):
+    mock_pyairtable.records[0]["fields"]["Send weekdays"] = ""
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    assert client.list_enabled()[0].send_weekdays is None
+
+
+def test_send_weekdays_normalizes_case_and_whitespace(mock_pyairtable):
+    mock_pyairtable.records[0]["fields"]["Send weekdays"] = " monday, WED ,fri "
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    assert client.list_enabled()[0].send_weekdays == frozenset({0, 2, 4})
+
+
+def test_send_weekdays_rejects_unknown_token(mock_pyairtable):
+    mock_pyairtable.records[0]["fields"]["Send weekdays"] = "Mon,Funday"
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    with pytest.raises(EventRowSchemaError, match=r"recABC123.*Send weekdays.*Funday"):
+        client.list_enabled()
 
 
 def test_sheet_url_read_from_field(mock_pyairtable):

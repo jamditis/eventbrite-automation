@@ -28,7 +28,7 @@ Ruff, Airtable, Eventbrite API, systemd, SMTP, and the email ledger.
 - Modify: `tests/digest/test_airtable_client.py`
 - Modify: `digest/airtable_client.py`
 
-- [ ] **Step 1: Add failing row-parsing tests**
+- [x] **Step 1: Add failing row-parsing tests**
 
 Add `Send weekdays` to the fixture:
 
@@ -64,7 +64,7 @@ def test_send_weekdays_rejects_unknown_token(mock_pyairtable):
         client.list_enabled()
 ```
 
-- [ ] **Step 2: Run the tests and prove they fail**
+- [x] **Step 2: Run the tests and prove they fail**
 
 Run:
 
@@ -78,7 +78,7 @@ venv/bin/python -m pytest \
 
 Expected: failures because `EventRow.send_weekdays` and the parser do not exist.
 
-- [ ] **Step 3: Implement weekday parsing**
+- [x] **Step 3: Implement weekday parsing**
 
 Add the field constant and parser in `digest/airtable_client.py`:
 
@@ -131,13 +131,13 @@ send_weekdays=_parse_send_weekdays(
 ),
 ```
 
-- [ ] **Step 4: Re-run the parsing tests**
+- [x] **Step 4: Re-run the parsing tests**
 
 Run the command from Step 2.
 
 Expected: four tests pass.
 
-- [ ] **Step 5: Commit the model change**
+- [x] **Step 5: Commit the model change**
 
 ```bash
 git add digest/airtable_client.py \
