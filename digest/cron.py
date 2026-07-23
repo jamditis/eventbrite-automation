@@ -3,18 +3,20 @@
 Run as: `python -m digest.cron [--dry-run]`
 
 Decision sequence per event row, per tick:
-  1. Initial briefing pending (requested but not sent)? send + return.
+  1. Initial briefing pending (requested but not sent) on a configured
+     weekday? send + return.
      This fires even when the row is NOT enabled — a staff-requested
      briefing on a not-yet-enabled draft must not silently never-fire
      (see AirtableClient.list_active, which selects these rows regardless
      of Enabled).
   2. Not enabled? skip the daily-digest path.
-  3. Outside the configured days-out window? skip.
-  4. Before today's configured send-time (in ET)? skip.
-  5. Already sent today? skip.
-  6. No initial briefing yet? skip — daily digests gate on the staff-
+  3. Today is outside the configured weekdays? skip.
+  4. Outside the configured days-out window? skip.
+  5. Before today's configured send-time (in ET)? skip.
+  6. Already sent today? skip.
+  7. No initial briefing yet? skip — daily digests gate on the staff-
      authorized initial briefing so we never auto-fire on a fresh event.
-  7. Send daily digest. If silent-when-empty (no new attendees), bail
+  8. Send daily digest. If silent-when-empty (no new attendees), bail
      before SMTP without recording state changes.
 
 Deployment constraints (per CLAUDE.md "services run on houseofjawn only"):
@@ -101,8 +103,21 @@ def has_pending_initial_briefing(row: EventRow) -> bool:
     return bool(row.initial_briefing_requested_at) and not row.initial_briefing_sent_at
 
 
+def is_scheduled_weekday(row: EventRow, now: datetime) -> bool:
+    return (
+        row.send_weekdays is None
+        or now.astimezone(ET).weekday() in row.send_weekdays
+    )
+
+
+def should_send_initial(row: EventRow, now: datetime) -> bool:
+    return has_pending_initial_briefing(row) and is_scheduled_weekday(row, now)
+
+
 def should_send_today(row: EventRow, now: datetime) -> bool:
     if not row.enabled:
+        return False
+    if not is_scheduled_weekday(row, now):
         return False
     if not _now_in_window(row, now):
         return False
@@ -372,7 +387,7 @@ def main(dry_run: bool = False) -> None:
 
         for row in rows:
             try:
-                if has_pending_initial_briefing(row):
+                if should_send_initial(row, now):
                     _run_briefing(
                         row, eb, crm, llm, renderer, sender, airtable, now,
                         is_initial=True, dry_run=dry_run, logo_url=cfg.logo_url,

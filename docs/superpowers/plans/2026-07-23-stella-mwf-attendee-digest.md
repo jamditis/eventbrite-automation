@@ -154,7 +154,7 @@ git commit -m "feat: make digest weekdays event-specific"
 - Modify: `tests/digest/test_integration_e2e.py`
 - Modify: `digest/cron.py`
 
-- [ ] **Step 1: Update test row builders**
+- [x] **Step 1: Update test row builders**
 
 Add the field to the base dictionaries in `_row` and `_event_row`:
 
@@ -162,7 +162,7 @@ Add the field to the base dictionaries in `_row` and `_event_row`:
 send_weekdays=None,
 ```
 
-- [ ] **Step 2: Add failing scheduling tests**
+- [x] **Step 2: Add failing scheduling tests**
 
 Import `is_scheduled_weekday` and `should_send_initial`, then add:
 
@@ -209,7 +209,7 @@ def test_pending_initial_waits_for_selected_weekday():
     assert should_send_initial(row, friday) is True
 ```
 
-- [ ] **Step 3: Run the new decision tests and prove they fail**
+- [x] **Step 3: Run the new decision tests and prove they fail**
 
 ```bash
 venv/bin/python -m pytest tests/digest/test_cron_decisions.py -v
@@ -218,7 +218,7 @@ venv/bin/python -m pytest tests/digest/test_cron_decisions.py -v
 Expected: import or assertion failures because the weekday helpers do not
 exist and `should_send_today` does not check weekdays.
 
-- [ ] **Step 4: Implement the decision helpers**
+- [x] **Step 4: Implement the decision helpers**
 
 In `digest/cron.py`, add:
 
@@ -274,7 +274,7 @@ elif row.enabled and should_send_today(row, now):
     )
 ```
 
-- [ ] **Step 5: Run decision and integration tests**
+- [x] **Step 5: Run decision and integration tests**
 
 ```bash
 venv/bin/python -m pytest \
@@ -284,7 +284,7 @@ venv/bin/python -m pytest \
 
 Expected: all tests pass.
 
-- [ ] **Step 6: Commit the cron change**
+- [x] **Step 6: Commit the cron change**
 
 ```bash
 git add digest/cron.py \

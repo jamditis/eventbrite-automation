@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import digest.cron as cron
 from digest.airtable_client import EventRow
 from digest.cron import (
     _format_event_when,
@@ -30,6 +31,7 @@ def _row(**overrides):
         initial_briefing_sent_at="2026-05-08T11:00:00+00:00",
         initial_briefing_requested_at=None,
         last_error="",
+        send_weekdays=None,
     )
     base.update(overrides)
     return EventRow(**base)
@@ -61,6 +63,48 @@ def test_sends_when_window_and_send_time_passed():
     r = _row(send_time_et="07:00", last_digest_sent_at=None)
     now = datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
     assert should_send_today(r, now) is True
+
+
+def test_blank_weekdays_preserve_daily_eligibility():
+    row = _row(send_weekdays=None)
+    thursday = datetime(2026, 7, 23, 12, 0, tzinfo=UTC)
+    assert cron.is_scheduled_weekday(row, thursday) is True
+
+
+def test_mwf_row_skips_thursday():
+    row = _row(
+        send_weekdays=frozenset({0, 2, 4}),
+        event_start_et="2026-07-30T18:00:00+00:00",
+    )
+    thursday = datetime(2026, 7, 23, 18, 0, tzinfo=UTC)
+    assert should_send_today(row, thursday) is False
+
+
+def test_mwf_row_sends_friday():
+    row = _row(
+        send_weekdays=frozenset({0, 2, 4}),
+        event_start_et="2026-07-30T18:00:00+00:00",
+    )
+    friday_at_7_et = datetime(2026, 7, 24, 11, 0, tzinfo=UTC)
+    assert should_send_today(row, friday_at_7_et) is True
+
+
+def test_weekday_uses_eastern_calendar_date():
+    row = _row(send_weekdays=frozenset({0}))
+    monday_10_30_pm_et = datetime(2026, 7, 28, 2, 30, tzinfo=UTC)
+    assert cron.is_scheduled_weekday(row, monday_10_30_pm_et) is True
+
+
+def test_pending_initial_waits_for_selected_weekday():
+    row = _row(
+        send_weekdays=frozenset({0, 2, 4}),
+        initial_briefing_sent_at=None,
+        initial_briefing_requested_at="2026-07-23T14:00:00+00:00",
+    )
+    thursday = datetime(2026, 7, 23, 12, 0, tzinfo=UTC)
+    friday = datetime(2026, 7, 24, 11, 0, tzinfo=UTC)
+    assert cron.should_send_initial(row, thursday) is False
+    assert cron.should_send_initial(row, friday) is True
 
 
 def test_skips_when_already_sent_today():
