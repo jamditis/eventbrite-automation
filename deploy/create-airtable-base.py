@@ -62,6 +62,8 @@ EVENTS_FIELDS = [
      "description": "Daily digests begin this many days before the event. Default 7."},
     {"name": "Send time (ET)", "type": "singleLineText",
      "description": "HH:MM Eastern. The daily send floor. Default 07:00."},
+    {"name": "Send weekdays", "type": "singleLineText",
+     "description": "Optional comma-separated Mon through Sun. Blank means every day."},
     {"name": "Registration question IDs to include", "type": "multilineText",
      "description": "Comma-separated Eventbrite question IDs. Empty = include all."},
     {"name": "Event start (ET)", "type": "dateTime", "options": _DT_OPTS,

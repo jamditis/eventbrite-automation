@@ -39,6 +39,7 @@ def _row(**overrides) -> EventRow:
         initial_briefing_sent_at=None,
         initial_briefing_requested_at=None,
         last_error="",
+        send_weekdays=None,
     )
     base.update(overrides)
     return EventRow(**base)

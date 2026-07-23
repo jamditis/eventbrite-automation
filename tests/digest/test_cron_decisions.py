@@ -1,6 +1,8 @@
+import logging
 from datetime import UTC, datetime
 
-from digest.airtable_client import EventRow
+import digest.cron as cron
+from digest.airtable_client import EventRow, EventRowSchemaError
 from digest.cron import (
     _format_event_when,
     _now_in_window,
@@ -30,6 +32,7 @@ def _row(**overrides):
         initial_briefing_sent_at="2026-05-08T11:00:00+00:00",
         initial_briefing_requested_at=None,
         last_error="",
+        send_weekdays=None,
     )
     base.update(overrides)
     return EventRow(**base)
@@ -61,6 +64,137 @@ def test_sends_when_window_and_send_time_passed():
     r = _row(send_time_et="07:00", last_digest_sent_at=None)
     now = datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
     assert should_send_today(r, now) is True
+
+
+def test_blank_weekdays_preserve_daily_eligibility():
+    row = _row(send_weekdays=None)
+    thursday = datetime(2026, 7, 23, 12, 0, tzinfo=UTC)
+    assert cron.is_scheduled_weekday(row, thursday) is True
+
+
+def test_mwf_row_skips_thursday():
+    row = _row(
+        send_weekdays=frozenset({0, 2, 4}),
+        event_start_et="2026-07-30T18:00:00+00:00",
+    )
+    thursday = datetime(2026, 7, 23, 18, 0, tzinfo=UTC)
+    assert should_send_today(row, thursday) is False
+
+
+def test_skip_reason_explains_excluded_weekday():
+    row = _row(
+        send_weekdays=frozenset({0, 2, 4}),
+        event_start_et="2026-07-30T18:00:00+00:00",
+    )
+    thursday = datetime(2026, 7, 23, 18, 0, tzinfo=UTC)
+    assert cron._skip_reason(row, thursday) == "outside configured weekday"
+
+
+def test_mwf_row_sends_friday():
+    row = _row(
+        send_weekdays=frozenset({0, 2, 4}),
+        event_start_et="2026-07-30T18:00:00+00:00",
+    )
+    friday_at_7_et = datetime(2026, 7, 24, 11, 0, tzinfo=UTC)
+    assert should_send_today(row, friday_at_7_et) is True
+
+
+def test_weekday_uses_eastern_calendar_date():
+    row = _row(send_weekdays=frozenset({0}))
+    monday_10_30_pm_et = datetime(2026, 7, 28, 2, 30, tzinfo=UTC)
+    assert cron.is_scheduled_weekday(row, monday_10_30_pm_et) is True
+
+
+def test_pending_initial_waits_for_selected_weekday():
+    row = _row(
+        send_weekdays=frozenset({0, 2, 4}),
+        event_start_et="2026-07-30T18:00:00+00:00",
+        initial_briefing_sent_at=None,
+        initial_briefing_requested_at="2026-07-23T14:00:00+00:00",
+    )
+    thursday = datetime(2026, 7, 23, 12, 0, tzinfo=UTC)
+    friday = datetime(2026, 7, 24, 11, 0, tzinfo=UTC)
+    assert cron.should_send_initial(row, thursday) is False
+    assert cron.should_send_initial(row, friday) is True
+
+
+def test_pending_initial_does_not_send_after_event():
+    row = _row(
+        send_weekdays=frozenset({0, 2, 4}),
+        event_start_et="2026-07-30T18:00:00+00:00",
+        initial_briefing_sent_at=None,
+        initial_briefing_requested_at="2026-07-30T14:00:00+00:00",
+    )
+    friday_after_event = datetime(2026, 7, 31, 11, 0, tzinfo=UTC)
+    assert cron.should_send_initial(row, friday_after_event) is False
+
+
+def test_pending_initial_with_blank_event_start_preserves_legacy_send():
+    row = _row(
+        event_start_et=None,
+        initial_briefing_sent_at=None,
+        initial_briefing_requested_at="2026-07-24T10:00:00+00:00",
+    )
+    friday = datetime(2026, 7, 24, 11, 0, tzinfo=UTC)
+    assert cron.should_send_initial(row, friday) is True
+
+
+def test_active_record_parsing_isolates_bad_row_and_continues():
+    records = [
+        {
+            "id": "rec_bad",
+            "fields": {"Event slug": "bad", "Send weekdays": "Funday"},
+        },
+        {
+            "id": "rec_good",
+            "fields": {"Event slug": "good", "Send weekdays": "Mon,Wed,Fri"},
+        },
+    ]
+
+    parsed = list(cron._parse_active_records(records))
+
+    assert parsed[0][0] == "rec_bad"
+    assert parsed[0][1] is None
+    assert isinstance(parsed[0][2], EventRowSchemaError)
+    assert parsed[1][0] == "rec_good"
+    assert parsed[1][1].slug == "good"
+    assert parsed[1][2] is None
+
+
+def test_active_record_parsing_isolates_unexpected_parse_error():
+    records = [
+        {
+            "id": "rec_bad_type",
+            "fields": {"Event slug": "bad", "Send weekdays": 123},
+        },
+        {
+            "id": "rec_good",
+            "fields": {"Event slug": "good", "Send weekdays": "Mon"},
+        },
+    ]
+
+    parsed = list(cron._parse_active_records(records))
+
+    assert parsed[0][0] == "rec_bad_type"
+    assert parsed[0][1] is None
+    assert isinstance(parsed[0][2], AttributeError)
+    assert parsed[1][1].slug == "good"
+    assert parsed[1][2] is None
+
+
+def test_record_error_safely_contains_airtable_write_failure(caplog):
+    class FailingAirtable:
+        def record_error_by_id(self, record_id, message):
+            raise RuntimeError("Airtable unavailable")
+
+    with caplog.at_level(logging.ERROR, logger="digest.cron"):
+        cron._record_error_safely(
+            FailingAirtable(),
+            "rec_bad",
+            "EventRowSchemaError: invalid weekday",
+        )
+
+    assert "could not record error for event record rec_bad" in caplog.text
 
 
 def test_skips_when_already_sent_today():

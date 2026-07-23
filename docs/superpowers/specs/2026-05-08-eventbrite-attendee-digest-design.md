@@ -111,6 +111,7 @@ Treat as separate PR from any digest code. Reviewable on its own merits by anyon
 | `Lead host email` | Email | `Reply-To` target. |
 | `Days out to start` | Number | Default 7. Daily digests begin this many days before event start. |
 | `Send time (ET)` | Single line text, `HH:MM` | Default `07:00`. |
+| `Send weekdays` | Single line text | Optional comma-separated `Mon` through `Sun`. Blank preserves the every-calendar-day default. |
 | `Registration question IDs to include` | Long text | Comma-separated EB question IDs. Empty = include all. |
 
 ### System fields (cron-managed state, not admin-form inputs)
@@ -341,24 +342,26 @@ ExecStart=/usr/bin/timeout --foreground 600 \
 
 ```python
 def cron_tick(now: datetime) -> None:
-    # list_active() selects the rows this tick should consider:
+    # list_active_records() selects the raw records this tick should consider:
     #   OR({Enabled} = TRUE(), AND({Initial briefing requested at},
     #                              NOT({Initial briefing sent at})))
     # A pending initial briefing is included regardless of Enabled, so a
     # staff-requested briefing on a not-yet-enabled draft still fires rather
     # than silently never firing.
-    for row in airtable.list_active():
+    for record in airtable.list_active_records():
         try:
+            row = EventRow.from_airtable(record)
             decide_and_dispatch(row, now)
         except Exception as e:
             msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()[:1500]}"
-            airtable.record_error(row, msg)   # truncated type+message+traceback → Last error
-            logger.exception(f"failed for event {row.slug}")
+            _record_error_safely(airtable, record["id"], msg)
+            logger.exception(f"failed for event record {record['id']}")
             # CRITICAL: continue. One event's failure cannot block others.
 
 def decide_and_dispatch(row, now):
-    # 1. One-shot initial briefing fires first, regardless of Enabled.
-    if has_pending_initial_briefing(row):   # requested_at set, sent_at not
+    # 1. One-shot initial briefing fires first, regardless of Enabled, but
+    #    only on a configured weekday inside the event window.
+    if should_send_initial(row, now):
         run_initial_briefing(row, now)       # sends, then one atomic write (update_after_initial_send):
                                              #   sets initial_briefing_sent_at, clears requested_at, AND
                                              #   persists last_digest_sent_at + attendee_cursor + count.
@@ -501,7 +504,7 @@ Minimal: event title, date/time, automation on/off, total registrants, "Daily br
 | SMTP transient | Same | Retry 3x within tick. Defer if still failing | No |
 | Email ledger says duplicate | Same | Abort send, log warning, do NOT update `Last digest sent at` | No |
 | Airtable write fails after send | `airtable.update_after_send` | Log, Telegram alert (ledger has record) | Yes |
-| Airtable read fails on tick startup | `airtable.list_active` | Hard fail + Telegram on 2nd consecutive | Yes |
+| Airtable read fails on tick startup | `airtable.list_active_records` | Hard fail + Telegram on 2nd consecutive | Yes |
 | File lock contention | Cron startup | Log + clean exit | No |
 | CF Access JWT verification fails | Pages Function | Return 401, browser sees CF Access login | Yes |
 | Pages Function can't reach Airtable | Pages Function | Return 502, UI shows red banner with retry button | Yes |
