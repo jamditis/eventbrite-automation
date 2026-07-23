@@ -168,6 +168,17 @@ def _parse_active_records(
             yield record_id, None, error
 
 
+def _record_error_safely(
+    airtable: AirtableClient,
+    record_id: str,
+    message: str,
+) -> None:
+    try:
+        airtable.record_error_by_id(record_id, message)
+    except Exception:
+        logger.exception("could not record error for event record %s", record_id)
+
+
 _TZ_ABBREVS = {
     "America/New_York": "ET",
     "America/Chicago": "CT",
@@ -427,7 +438,8 @@ def main(dry_run: bool = False) -> None:
             if parse_error is not None:
                 logger.error("event record %s invalid: %s", record_id, parse_error)
                 if not dry_run:
-                    airtable.record_error_by_id(
+                    _record_error_safely(
+                        airtable,
                         record_id,
                         f"{type(parse_error).__name__}: {parse_error}",
                     )
@@ -450,8 +462,10 @@ def main(dry_run: bool = False) -> None:
             except Exception as e:
                 logger.exception("event %s failed", row.slug)
                 if not dry_run:
-                    airtable.record_error(
-                        row, f"{type(e).__name__}: {e}\n{traceback.format_exc()[:1500]}"
+                    _record_error_safely(
+                        airtable,
+                        row.record_id,
+                        f"{type(e).__name__}: {e}\n{traceback.format_exc()[:1500]}",
                     )
     finally:
         lock.close()

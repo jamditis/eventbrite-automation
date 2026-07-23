@@ -354,7 +354,7 @@ def cron_tick(now: datetime) -> None:
             decide_and_dispatch(row, now)
         except Exception as e:
             msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()[:1500]}"
-            airtable.record_error_by_id(record["id"], msg)
+            _record_error_safely(airtable, record["id"], msg)
             logger.exception(f"failed for event record {record['id']}")
             # CRITICAL: continue. One event's failure cannot block others.
 

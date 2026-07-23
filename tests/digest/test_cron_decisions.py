@@ -1,3 +1,4 @@
+import logging
 from datetime import UTC, datetime
 
 import digest.cron as cron
@@ -179,6 +180,21 @@ def test_active_record_parsing_isolates_unexpected_parse_error():
     assert isinstance(parsed[0][2], AttributeError)
     assert parsed[1][1].slug == "good"
     assert parsed[1][2] is None
+
+
+def test_record_error_safely_contains_airtable_write_failure(caplog):
+    class FailingAirtable:
+        def record_error_by_id(self, record_id, message):
+            raise RuntimeError("Airtable unavailable")
+
+    with caplog.at_level(logging.ERROR, logger="digest.cron"):
+        cron._record_error_safely(
+            FailingAirtable(),
+            "rec_bad",
+            "EventRowSchemaError: invalid weekday",
+        )
+
+    assert "could not record error for event record rec_bad" in caplog.text
 
 
 def test_skips_when_already_sent_today():
