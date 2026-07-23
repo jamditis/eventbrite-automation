@@ -32,7 +32,7 @@ The cron reads these to decide what to do, and writes them after each tick:
 | `Send time (ET)` | read | Daily fire-no-earlier-than floor. The cron ticks once a day at 07:00 ET, so a value **later than 07:00 means the event never fires** — keep it `<= 07:00` or move the timer's `OnCalendar`. |
 | `Send weekdays` | read | Optional comma-separated `Mon` through `Sun`. Blank means every day. Applies to initial and follow-up emails. |
 | `Registration question IDs to include` | read | Optional Q&A filter. |
-| `Event start (ET)` | read | Used for window calculation. NOT auto-refreshed from Eventbrite — staff must update if EB event reschedules. |
+| `Event start (ET)` | read | Used for window calculation. NOT auto-refreshed from Eventbrite — staff must update if EB event reschedules. If blank, the legacy initial briefing can still send, but follow-up digests do not. |
 | `Initial briefing requested at` | read, write (clear after send) | Staff sets this via admin UI to fire the one-shot initial briefing. |
 | `Initial briefing sent at` | read, write | Set after initial briefing fires; gates daily digests. |
 | `Last digest sent at` | read, write | Per-day skip gate for daily digests. |
@@ -44,7 +44,9 @@ Enter a Monday, Wednesday, and Friday schedule as `Mon,Wed,Fri`. The parser
 normalizes case and surrounding whitespace. An unknown weekday fails that row
 with its record ID in `Last error`; it never falls back to a broader schedule.
 A pending initial briefing on an excluded day remains pending until the next
-configured weekday.
+configured weekday inside the event window. A configured event start prevents
+it from sending after the event.
+Rows that are not eligible on a tick log the skip reason for diagnosis.
 
 ### Standing recipients (Cc/Bcc)
 

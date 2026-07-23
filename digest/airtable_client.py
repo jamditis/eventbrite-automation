@@ -93,6 +93,10 @@ def _parse_send_weekdays(raw: str, *, record_id: str) -> frozenset[int] | None:
     if not raw or not raw.strip():
         return None
     tokens = [token.strip() for token in raw.split(",") if token.strip()]
+    if not tokens:
+        raise EventRowSchemaError(
+            f"record {record_id}: field {FIELD.SEND_WEEKDAYS!r} contains no weekdays"
+        )
     invalid = [token for token in tokens if token.lower() not in _WEEKDAYS]
     if invalid:
         raise EventRowSchemaError(
@@ -177,8 +181,14 @@ class AirtableClient:
         records = self._table.all(formula="{Enabled} = TRUE()")
         return [EventRow.from_airtable(r) for r in records]
 
-    def list_active(self) -> list[EventRow]:
-        """Rows the cron should consider this tick: enabled OR with a pending
+    def list_active_records(self) -> list[dict]:
+        """Raw records the cron should consider this tick.
+
+        Returning raw records lets the cron parse each row inside its own
+        error boundary. One malformed event can then be marked with `Last
+        error` without blocking valid events in the same tick.
+
+        Active means enabled OR with a pending
         initial briefing. The latter is included regardless of `Enabled` so
         a staff-requested briefing on a not-yet-enabled draft event still
         fires — the alternative (silent never-fire) is the worst kind of
@@ -188,8 +198,11 @@ class AirtableClient:
             "OR({Enabled} = TRUE(), "
             "AND({Initial briefing requested at}, NOT({Initial briefing sent at})))"
         )
-        records = self._table.all(formula=formula)
-        return [EventRow.from_airtable(r) for r in records]
+        return self._table.all(formula=formula)
+
+    def list_active(self) -> list[EventRow]:
+        """Parsed active rows for callers that want all-or-nothing validation."""
+        return [EventRow.from_airtable(r) for r in self.list_active_records()]
 
     def list_all(self) -> list[EventRow]:
         return [EventRow.from_airtable(r) for r in self._table.all()]
@@ -286,7 +299,10 @@ class AirtableClient:
         )
 
     def record_error(self, row: EventRow, message: str) -> None:
-        self._table.update(row.record_id, {FIELD.LAST_ERROR: message[:_LAST_ERROR_MAX]})
+        self.record_error_by_id(row.record_id, message)
+
+    def record_error_by_id(self, record_id: str, message: str) -> None:
+        self._table.update(record_id, {FIELD.LAST_ERROR: message[:_LAST_ERROR_MAX]})
 
     def mark_initial_briefing_sent(self, row: EventRow, at: datetime) -> None:
         self._table.update(row.record_id, {FIELD.INITIAL_BRIEFING_SENT_AT: at.isoformat()})

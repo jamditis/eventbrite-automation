@@ -111,8 +111,8 @@ def test_extractor_finds_known_reference():
     would be useless. This anchors it to a reference known to exist today.
     """
     pairs = {(r.prefix, r.attr) for r in REFERENCES}
-    assert ("airtable", "list_active") in pairs, (
-        "spec-symbol extractor found no `airtable.list_active` reference -- the "
+    assert ("airtable", "list_active_records") in pairs, (
+        "spec-symbol extractor found no `airtable.list_active_records` reference -- the "
         "spec changed shape or the regex broke; fix the extractor."
     )
 

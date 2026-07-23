@@ -19,7 +19,9 @@ The production digest service currently supports a per-event start window and se
 - Invalid weekday values fail that row with a useful schema error. They never fall back to a broader schedule.
 - The global `digest-cron.timer` remains daily at 7 a.m. Eastern.
 - Follow-up digests remain silent when no one new has registered.
-- The event-start gate continues to stop delivery after the webinar begins.
+- When an event start is configured, the event-start gate continues to stop
+  delivery after the webinar begins. A blank start preserves the legacy
+  initial-send behavior, while follow-up digests remain gated.
 - Test emails may go only to `jamditis@gmail.com`.
 - No email may go to Stella until Joe reviews and approves the test results.
 
@@ -112,6 +114,8 @@ Write tests before implementation for:
 - initial briefings waiting for an eligible weekday;
 - follow-up digests sending on Monday, Wednesday, and Friday and skipping other days;
 - event-end suppression after July 30;
+- legacy initial-send behavior when the event start is blank;
+- isolation of both schema and unexpected per-record parse failures;
 - parsing the new field from an Airtable fixture.
 
 Run the full digest suite, Ruff checks, a production-data dry run with SMTP disabled by `--dry-run`, and a live systemd service invocation that proves the deployed code reads the new Airtable row without sending early.

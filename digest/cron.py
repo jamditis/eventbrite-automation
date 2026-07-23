@@ -4,11 +4,11 @@ Run as: `python -m digest.cron [--dry-run]`
 
 Decision sequence per event row, per tick:
   1. Initial briefing pending (requested but not sent) on a configured
-     weekday? send + return.
+     weekday and inside the event window? send + return.
      This fires even when the row is NOT enabled — a staff-requested
      briefing on a not-yet-enabled draft must not silently never-fire
-     (see AirtableClient.list_active, which selects these rows regardless
-     of Enabled).
+     (see AirtableClient.list_active_records, which selects these rows
+     regardless of Enabled).
   2. Not enabled? skip the daily-digest path.
   3. Today is outside the configured weekdays? skip.
   4. Outside the configured days-out window? skip.
@@ -34,6 +34,7 @@ import logging
 import os
 import sys
 import traceback
+from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -111,7 +112,11 @@ def is_scheduled_weekday(row: EventRow, now: datetime) -> bool:
 
 
 def should_send_initial(row: EventRow, now: datetime) -> bool:
-    return has_pending_initial_briefing(row) and is_scheduled_weekday(row, now)
+    return (
+        has_pending_initial_briefing(row)
+        and is_scheduled_weekday(row, now)
+        and (not row.event_start_et or _now_in_window(row, now))
+    )
 
 
 def should_send_today(row: EventRow, now: datetime) -> bool:
@@ -128,6 +133,39 @@ def should_send_today(row: EventRow, now: datetime) -> bool:
     if not row.initial_briefing_sent_at:
         return False
     return True
+
+
+def _skip_reason(row: EventRow, now: datetime) -> str:
+    if has_pending_initial_briefing(row):
+        if not is_scheduled_weekday(row, now):
+            return "initial briefing waiting for configured weekday"
+        if row.event_start_et and not _now_in_window(row, now):
+            return "initial briefing outside event window"
+    if not row.enabled:
+        return "event disabled"
+    if not is_scheduled_weekday(row, now):
+        return "outside configured weekday"
+    if not _now_in_window(row, now):
+        return "outside event window"
+    if not _is_past_send_time_today(row.send_time_et, now):
+        return "before configured send time"
+    if _already_sent_today(row.last_digest_sent_at, now):
+        return "already sent today"
+    if not row.initial_briefing_sent_at:
+        return "initial briefing not sent"
+    return "not eligible"
+
+
+def _parse_active_records(
+    records: list[dict],
+) -> Iterator[tuple[str, EventRow | None, Exception | None]]:
+    """Parse active records independently so one invalid row cannot stop a tick."""
+    for record in records:
+        record_id = str(record.get("id") or "<unknown>")
+        try:
+            yield record_id, EventRow.from_airtable(record), None
+        except Exception as error:
+            yield record_id, None, error
 
 
 _TZ_ABBREVS = {
@@ -382,10 +420,20 @@ def main(dry_run: bool = False) -> None:
         renderer = EmailRenderer()
 
         now = datetime.now(UTC)
-        rows = airtable.list_active()
-        logger.info("tick: %d active rows, now=%s", len(rows), now.isoformat())
+        records = airtable.list_active_records()
+        logger.info("tick: %d active rows, now=%s", len(records), now.isoformat())
 
-        for row in rows:
+        for record_id, row, parse_error in _parse_active_records(records):
+            if parse_error is not None:
+                logger.error("event record %s invalid: %s", record_id, parse_error)
+                if not dry_run:
+                    airtable.record_error_by_id(
+                        record_id,
+                        f"{type(parse_error).__name__}: {parse_error}",
+                    )
+                continue
+
+            assert row is not None
             try:
                 if should_send_initial(row, now):
                     _run_briefing(
@@ -397,6 +445,8 @@ def main(dry_run: bool = False) -> None:
                         row, eb, crm, llm, renderer, sender, airtable, now,
                         is_initial=False, dry_run=dry_run, logo_url=cfg.logo_url,
                     )
+                else:
+                    logger.info("event %s skipped: %s", row.slug, _skip_reason(row, now))
             except Exception as e:
                 logger.exception("event %s failed", row.slug)
                 if not dry_run:

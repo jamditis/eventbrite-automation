@@ -94,6 +94,16 @@ def test_list_active_includes_disabled_with_pending_initial_briefing(mock_pyairt
         ac.Api = original_api
 
 
+def test_list_active_records_returns_invalid_rows_without_parsing(mock_pyairtable):
+    mock_pyairtable.records[0]["fields"]["Send weekdays"] = "Mon,Funday"
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+
+    records = client.list_active_records()
+
+    assert records[0]["id"] == "recABC123"
+    assert records[0]["fields"]["Send weekdays"] == "Mon,Funday"
+
+
 def test_list_enabled_returns_event_rows(mock_pyairtable):
     client = AirtableClient(pat="pat", base_id="base", table_name="Events")
     rows = client.list_enabled()
@@ -125,6 +135,13 @@ def test_send_weekdays_rejects_unknown_token(mock_pyairtable):
     mock_pyairtable.records[0]["fields"]["Send weekdays"] = "Mon,Funday"
     client = AirtableClient(pat="pat", base_id="base", table_name="Events")
     with pytest.raises(EventRowSchemaError, match=r"recABC123.*Send weekdays.*Funday"):
+        client.list_enabled()
+
+
+def test_send_weekdays_rejects_delimiters_without_weekdays(mock_pyairtable):
+    mock_pyairtable.records[0]["fields"]["Send weekdays"] = ",,"
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    with pytest.raises(EventRowSchemaError, match=r"recABC123.*Send weekdays.*no weekdays"):
         client.list_enabled()
 
 
@@ -185,6 +202,14 @@ def test_record_error_writes_to_last_error_field(mock_pyairtable):
     rows = client.list_enabled()
     client.record_error(rows[0], "EB API timeout")
     assert mock_pyairtable.update_calls[-1]["fields"] == {"Last error": "EB API timeout"}
+
+
+def test_record_error_by_id_writes_without_a_parsed_row(mock_pyairtable):
+    client = AirtableClient(pat="pat", base_id="base", table_name="Events")
+    client.record_error_by_id("recABC123", "invalid weekday")
+    assert mock_pyairtable.update_calls[-1]["fields"] == {
+        "Last error": "invalid weekday"
+    }
 
 
 def test_record_error_truncates_long_messages(mock_pyairtable):
