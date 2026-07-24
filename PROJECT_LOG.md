@@ -20,7 +20,7 @@ Airtable Form → Airtable Record → Python Script → Gemini (image) → Event
 
 ## Session history
 
-### 2025-01-28 - Initial implementation
+### 2026-01-28 - Initial implementation
 
 - Created project structure with all modules
 - Implemented Airtable client with status-based filtering
@@ -45,7 +45,7 @@ Airtable Form → Airtable Record → Python Script → Gemini (image) → Event
 - Moved to full Gemini generation with logo overlay - logos looked bad
 - Final: Gemini generates complete image with just title + subtitle, no branding
 
-### 2025-01-28 - First production run
+### 2026-01-28 - First production run
 
 - Ran pipeline on 6 unprocessed Airtable records
 - 1 successful draft created (future-dated event)
@@ -127,7 +127,7 @@ Airtable Form → Airtable Record → Python Script → Gemini (image) → Event
 - ✅ Full pipeline tested
 - ✅ First production run successful
 - ✅ Webhook server created
-- ⏳ Raspberry Pi deployment (pending)
+- ✅ Raspberry Pi deployment (live on houseofjawn since 2026-01-29)
 
 ## Key files
 
@@ -140,7 +140,6 @@ Airtable Form → Airtable Record → Python Script → Gemini (image) → Event
 | `eventbrite_client.py` | Uploads images, creates drafts, adds descriptions/tickets |
 | `image_generator.py` | Generates complete banner images via Gemini AI |
 | `test_full_pipeline.py` | End-to-end test with synthetic data |
-| `debug_airtable.py` | Debug script for Airtable connection issues |
 | `CLAUDE.md` | Project documentation for Claude Code |
 | `deploy/` | Deployment files for Raspberry Pi |
 

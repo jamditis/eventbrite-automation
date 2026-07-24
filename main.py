@@ -11,13 +11,15 @@ Usage:
 """
 
 import argparse
+import logging
 import sys
-from pathlib import Path
 
-from config import validate_config, TEMP_DIR
 from airtable_client import AirtableClient, EventRecord
+from config import validate_config
 from eventbrite_client import EventbriteClient
 from image_generator import ImageGenerator
+
+logger = logging.getLogger("eventbrite.main")
 
 
 def process_event(
@@ -57,10 +59,14 @@ def process_event(
         print("[DRY RUN] Would process this event")
         return True
 
+    image_path = None
     try:
         # Step 1: Generate featured image
         print("\nStep 1: Generating featured image...")
-        image_path = image_gen.generate_event_image(event)
+        generated = image_gen.generate_event_image(event)
+        image_path = generated.path
+        if generated.used_fallback:
+            print(f"    [!] AI generation failed ({generated.error}); using default CCM banner")
 
         # Step 2: Upload image to Eventbrite
         print("\nStep 2: Uploading image to Eventbrite...")
@@ -70,25 +76,38 @@ def process_event(
         print("\nStep 3: Creating draft event...")
         eb_event = eventbrite.create_draft_event(event, logo_id=logo_id)
 
-        # Step 4: Update Airtable record
+        # Step 4: Update Airtable record (store the event ID too, so image
+        # regeneration works later without URL-scraping)
         print("\nStep 4: Updating Airtable record...")
-        airtable.mark_as_processed(event.record_id, eb_event.url)
+        airtable.mark_as_processed(event.record_id, eb_event.url, eb_event.event_id)
+        if generated.used_fallback:
+            airtable.update_log(
+                event.record_id,
+                f"AI image generation failed ({generated.error}); used default CCM banner. "
+                "Set status to 'Regenerate image' to retry.",
+            )
+        for warning in eb_event.warnings:
+            print(f"    [!] {warning}")
+            airtable.update_log(event.record_id, f"Warning: {warning}")
 
-        # Clean up temp image
-        if image_path.exists():
-            image_path.unlink()
-
-        print(f"\nSUCCESS: Draft event created")
+        print("\nSUCCESS: Draft event created")
         print(f"URL: {eb_event.url}")
         print("(Review and publish in Eventbrite dashboard)")
 
         return True
 
     except Exception as e:
+        logger.exception("Failed to process event %s", event.record_id)
         print(f"\nERROR: Failed to process event: {e}")
-        import traceback
-        traceback.print_exc()
+        try:
+            airtable.update_log(event.record_id, f"Processing error: {e}")
+        except Exception:
+            logger.exception("Could not write failure to Airtable log for %s", event.record_id)
         return False
+    finally:
+        # Always clean up the temp image, including on failure
+        if image_path is not None and image_path.exists():
+            image_path.unlink()
 
 
 def test_connections() -> bool:
@@ -122,9 +141,9 @@ def test_connections() -> bool:
     # Test Gemini (image generation)
     print("\n3. Testing Gemini connection...")
     try:
-        image_gen = ImageGenerator()
+        ImageGenerator()
         # Just verify client initializes
-        print(f"   OK - Gemini client initialized")
+        print("   OK - Gemini client initialized")
         results.append(True)
     except Exception as e:
         print(f"   FAILED - {e}")
@@ -160,6 +179,11 @@ def main():
     )
 
     args = parser.parse_args()
+
+    logging.basicConfig(
+        level="INFO",
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
 
     # Validate configuration
     try:

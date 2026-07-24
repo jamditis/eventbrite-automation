@@ -1,0 +1,14 @@
+# Fired by digest-cron.service's OnFailure= whenever a tick exits non-zero
+# (run-level crash OR any per-event failure). Emails the standing staff list
+# so cron failures surface in inboxes instead of a silent systemd failed
+# state. See digest/alert_failure.py.
+[Unit]
+Description=Email alert when the eventbrite digest cron fails
+
+[Service]
+Type=oneshot
+User=jamditis
+Group=jamditis
+WorkingDirectory=/home/jamditis/projects/eventbrite-automation
+EnvironmentFile=/home/jamditis/projects/eventbrite-automation/.env.digest
+ExecStart=/usr/bin/timeout --foreground 120 /home/jamditis/projects/eventbrite-automation/venv/bin/python -m digest.alert_failure

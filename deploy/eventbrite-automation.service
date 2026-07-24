@@ -1,18 +1,29 @@
 [Unit]
 Description=Eventbrite Automation Webhook Server
 After=network.target
+# Keep restarting forever — a Pi that reboots into a flapping service should
+# never give up and leave the webhook down.
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
+# User/paths are rewritten to the actual user + checkout location by
+# deploy/setup.sh at install time.
 User=jamditis
 Group=jamditis
 WorkingDirectory=/home/jamditis/eventbrite-automation
 Environment="PATH=/home/jamditis/eventbrite-automation/venv/bin"
-ExecStart=/home/jamditis/eventbrite-automation/venv/bin/gunicorn webhook_server:app -b 0.0.0.0:5000 --workers 2 --timeout 120
+# One worker + threads (not multiple workers): background processing status
+# and the in-flight duplicate guard live in process memory, so every request
+# must land in the same process. gthread also heartbeats from the main
+# thread, so long-running requests (process_all) don't get the worker killed
+# by --timeout mid-batch.
+ExecStart=/home/jamditis/eventbrite-automation/venv/bin/gunicorn webhook_server:app -b 0.0.0.0:5000 --worker-class gthread --workers 1 --threads 8 --timeout 120 --graceful-timeout 30
 Restart=always
 RestartSec=10
 
-# Logging
+# Logging — rotated by /etc/logrotate.d/eventbrite-automation
+# (installed by deploy/setup.sh from deploy/logrotate-eventbrite-automation)
 StandardOutput=append:/var/log/eventbrite-automation/webhook.log
 StandardError=append:/var/log/eventbrite-automation/webhook-error.log
 

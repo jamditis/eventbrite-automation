@@ -13,8 +13,27 @@ from collections.abc import Iterator
 from dataclasses import dataclass, field
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 API_BASE = "https://www.eventbriteapi.com/v3"
+
+
+def _build_session() -> requests.Session:
+    """Read-only client, so retrying is safe. Retries 429/5xx with backoff —
+    a transient Eventbrite blip otherwise fails the event's digest until the
+    next day's tick.
+    """
+    retry = Retry(
+        total=3,
+        backoff_factor=1.5,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset(["GET", "HEAD"]),
+        respect_retry_after_header=True,
+    )
+    session = requests.Session()
+    session.mount("https://", HTTPAdapter(max_retries=retry))
+    return session
 
 
 class EventbritePaginationError(RuntimeError):
@@ -75,6 +94,7 @@ class EventbriteClient:
     def __init__(self, token: str, *, timeout: float = 30.0) -> None:
         self._token = token
         self._timeout = timeout
+        self._session = _build_session()
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self._token}"}
@@ -89,7 +109,7 @@ class EventbriteClient:
         url = f"{API_BASE}/events/{event_id}/attendees/"
         params: dict = {}
         while True:
-            resp = requests.get(
+            resp = self._session.get(
                 url, headers=self._headers(), params=params, timeout=self._timeout
             )
             resp.raise_for_status()
@@ -108,6 +128,6 @@ class EventbriteClient:
 
     def fetch_event(self, event_id: str) -> EventbriteEvent:
         url = f"{API_BASE}/events/{event_id}/"
-        resp = requests.get(url, headers=self._headers(), timeout=self._timeout)
+        resp = self._session.get(url, headers=self._headers(), timeout=self._timeout)
         resp.raise_for_status()
         return EventbriteEvent.from_api(resp.json())

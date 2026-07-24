@@ -29,4 +29,5 @@ jobs:
         with:
           python-version: '3.11'
       - run: pip install ruff
-      - run: ruff check digest/ tests/digest/
+      # Whole repo — the webhook subsystem is linted too, not just digest/
+      - run: ruff check .

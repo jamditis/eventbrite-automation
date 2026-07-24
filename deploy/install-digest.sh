@@ -48,6 +48,9 @@ fi
 
 sudo install -m 644 "$REPO/deploy/digest-cron.service" /etc/systemd/system/
 sudo install -m 644 "$REPO/deploy/digest-cron.timer" /etc/systemd/system/
+# OnFailure alert: emails the standing staff list when a tick exits non-zero,
+# so a broken cron surfaces in inboxes instead of a silent systemd failed state.
+sudo install -m 644 "$REPO/deploy/digest-failure-alert.service" /etc/systemd/system/
 
 # The cron logs to journald only (no StandardOutput= directive in the unit).
 # `journalctl -u digest-cron.service` is the canonical log surface; journald

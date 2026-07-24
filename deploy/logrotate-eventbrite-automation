@@ -1,0 +1,18 @@
+# Logrotate config for the webhook server's append-mode log files.
+# Installed to /etc/logrotate.d/eventbrite-automation by deploy/setup.sh.
+# Without this the systemd append: files grow unbounded and can fill the
+# Pi's SD card, which takes the whole service down.
+#
+# copytruncate is required: gunicorn keeps the file descriptor open (systemd
+# append mode), so a rename-based rotation would leave it writing to the
+# rotated file forever.
+/var/log/eventbrite-automation/*.log {
+    weekly
+    rotate 8
+    maxsize 20M
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+}

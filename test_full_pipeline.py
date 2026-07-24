@@ -7,9 +7,9 @@ The draft can be deleted from your Eventbrite dashboard after testing.
 from datetime import datetime, timedelta
 
 from airtable_client import EventRecord
+from config import TEMP_DIR
 from eventbrite_client import EventbriteClient
 from image_generator import ImageGenerator
-from config import TEMP_DIR
 
 
 def run_test():
@@ -65,10 +65,10 @@ def run_test():
     print("\n" + "=" * 60)
     print("TEST COMPLETE!")
     print("=" * 60)
-    print(f"\nEventbrite draft created:")
+    print("\nEventbrite draft created:")
     print(f"  URL: {eb_event.url}")
     print(f"  Event ID: {eb_event.event_id}")
-    print(f"\nYou can view and delete this draft from your Eventbrite dashboard.")
+    print("\nYou can view and delete this draft from your Eventbrite dashboard.")
 
     return eb_event
 

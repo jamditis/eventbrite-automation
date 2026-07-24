@@ -37,7 +37,8 @@ A once-daily cron that sends each opted-in event's speakers a registration brief
 - **Send model:** setting `Initial briefing requested at` on a row arms the one-shot initial briefing (fires on the next configured weekday inside the event window, regardless of `Enabled`); a blank `Event start (ET)` preserves the legacy initial-send behavior, while follow-up digests still require a start time. Checking `Enabled` turns on follow-up digests. Optional `Send weekdays` accepts comma-separated `Mon` through `Sun`; blank preserves daily eligibility. Each path clears or advances its own state after sending, so neither repeats.
 - **Standing recipients:** every send Bcc's `jamditis@gmail.com`, `etiennec@montclair.edu`, `advinculaa@montclair.edu` and Cc's `info@centerforcooperativemedia.org` (overridable via `BCC_ALWAYS` / `CC_ALWAYS` in `.env.digest`).
 - **Email:** SMTP as `njnewscommons@gmail.com`; the cross-session dup safety net is the email ledger at `~/.claude/workstation/sent-emails.db`.
-- **Tests:** `venv/bin/python -m pytest tests/digest/` (156 as of 2026-06-04). Includes `test_spec_symbols.py`, which fails the build if the design spec names a `module.method` that no longer exists in `digest/` (the guard against spec drift that issue #27 surfaced).
+- **Tests:** `venv/bin/python -m pytest tests/digest/` (180 as of 2026-07-24). Includes `test_spec_symbols.py`, which fails the build if the design spec names a `module.method` that no longer exists in `digest/` (the guard against spec drift that issue #27 surfaced), and `test_reliability.py`, which pins the exit-code/alerting/retry contract.
+- **Failure alerting:** any tick that exits non-zero (run-level crash or per-event failure — `digest/cron.py` `main()` returns 0/1/2) triggers `digest-failure-alert.service` via systemd `OnFailure=`, which emails the standing staff list (`digest/alert_failure.py`, recipients from `ALERT_RECIPIENTS` or `BCC_ALWAYS`). A broken cron surfaces in inboxes, not just journald.
 - **Ops + incident response:** `docs/operations/digest-runbook.md`. Design spec: `docs/superpowers/specs/2026-05-08-eventbrite-attendee-digest-design.md`.
 
 **Live since 2026-06-02:** the first production briefing went to the Pro News Coaches workshop speakers (June 4 event); daily digests enabled.
@@ -57,7 +58,7 @@ A once-daily cron that sends each opted-in event's speakers a registration brief
 | Eventbrite organizer | ✅ | Center for Cooperative Media (ID: 5988913981) |
 | Markdown → HTML | ✅ | Converts `**bold**`, `*italic*`, `[links](url)`, bullet lists |
 | Airtable automation | ✅ | Script-based trigger on Status = "Todo" |
-| Systemd service | ✅ | `eventbrite-automation.service` with auto-restart |
+| Systemd service | ✅ | `eventbrite-automation.service`, auto-restart, gunicorn 1 worker + 8 threads (gthread), logrotate on the log files |
 | Cloudflare Tunnel | ✅ | Public URL via existing `houseofjawn` tunnel |
 
 ---
@@ -287,27 +288,35 @@ Check processing status for a record.
 ```json
 {
   "status": "completed",
-  "result": {"success": true, "eventbrite_url": "https://..."},
+  "started": "2026-01-29T13:03:06.555106",
   "completed": "2026-01-29T13:03:36.675291"
 }
 ```
 
-**Response (failed):**
-```json
-{
-  "status": "failed",
-  "result": {"success": false, "error": "..."},
-  "completed": "2026-01-29T13:03:36.675291"
-}
-```
+**Response (failed):** same shape with `"status": "failed"`. The endpoint
+returns status + timestamps only — the durable outcome (URL or error) lives
+on the Airtable record's Status/Logs fields. Unknown record IDs return HTTP
+404 with `{"status": "unknown"}` (also the case after a service restart,
+since status is in-memory).
 
 ---
 
 ## Important technical details
 
+### Reliability guardrails (2026-07)
+
+- Every outbound HTTP call (Eventbrite, Airtable, Gemini, S3) has a timeout; Eventbrite GETs retry on 429/5xx with backoff. POSTs are never blindly retried (a timed-out create may have succeeded — retrying would duplicate the draft).
+- Per-record in-flight locking rejects concurrent webhook fires for the same record; a record that already has an `Eventbrite event ID` is repaired, never re-created.
+- Failures set Status to "Needs review" + a `Logs` entry; Gemini fallback-banner substitutions are also logged to the record.
+- Background work runs on a bounded 4-thread pool; the status map is capped at 200 entries.
+- Optional webhook auth: set `WEBHOOK_REQUIRE_AUTH=true` + a secret to require `X-Webhook-Secret` header or `{"secret": ...}` body field (update the Airtable script first — see `docs/operations/webhook-runbook.md`).
+- Tests: `python -m pytest tests/` covers both subsystems (222 tests as of 2026-07-24); CI lints the whole repo with ruff.
+
 ### Eventbrite organizer profile
 
 Events are created under the **Center for Cooperative Media** organizer profile (ID: 5988913981), not the Rutgers/RIIPL one (ID: 9325601432). This is configured in `config.py` as `EVENTBRITE_ORGANIZER_ID`.
+
+Separately, `EVENTBRITE_ORGANIZATION_ID` (66857244479) pins the CCM *organization* used in the create-event URL — the token's organization list returns a blank-named org first that the token cannot create under (see issue #32), so list order is never trusted.
 
 ### Internal notes filtering
 
@@ -360,6 +369,7 @@ All credentials in `.env` file (not committed):
 
 - **Unprocessed:** blank, "Todo", "In progress", "Needs review"
 - **After processing:** "Eventbrite draft created"
+- **On failure:** "Needs review" (`ERROR_STATUS` in config.py) — the pipeline sets this and writes the reason to the `Logs` field, so failures are visible in the Status column. Because "Needs review" is still an unprocessed status, fixing the issue and re-triggering (or `process_all`) retries the record.
 - **Regenerate image:** Set to "Regenerate image" to trigger a new AI image generation. Status automatically resets to "Eventbrite draft created" when complete.
 
 ## Common issues
@@ -374,7 +384,11 @@ All credentials in `.env` file (not committed):
 
 **Markdown not converting:** Ensure `_markdown_to_html()` is being called in `_build_description_html()`.
 
-**Processing status lost on restart:** The `processing_status` dict is in-memory. If the service restarts mid-processing, status is lost. Check logs for actual results.
+**Processing status lost on restart:** The `processing_status` dict is in-memory. If the service restarts mid-processing, status is lost. The Airtable record's Status/Logs fields are the durable record; re-triggering is safe — the duplicate-draft guard repairs a record that already has an Eventbrite event ID instead of creating a second draft.
+
+**Failed record:** Status becomes "Needs review" and the reason is appended to the record's `Logs` field. Server-side stack traces: `/var/log/eventbrite-automation/webhook-error.log`.
+
+**Digest cron failed:** staff get an email from `digest-failure-alert.service` (OnFailure hook). Triage per `docs/operations/digest-runbook.md`; the webhook equivalent is `docs/operations/webhook-runbook.md`.
 
 ## Manual steps for virtual events
 

@@ -135,7 +135,10 @@ class SendEngine:
         msg.set_content(text_body)
         msg.add_alternative(html_body, subtype="html")
 
-        with smtplib.SMTP_SSL(self._host, self._port) as smtp:
+        # Bounded so one hung SMTP connection can't stall the whole tick until
+        # the systemd `timeout 600` kill (which would also skip every event
+        # after this one).
+        with smtplib.SMTP_SSL(self._host, self._port, timeout=60) as smtp:
             smtp.login(self._user, self._password)
             smtp.send_message(msg)
 
