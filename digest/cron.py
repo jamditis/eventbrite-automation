@@ -33,6 +33,7 @@ import fcntl
 import logging
 import os
 import sys
+import time
 import traceback
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -177,6 +178,37 @@ def _record_error_safely(
         airtable.record_error_by_id(record_id, message)
     except Exception:
         logger.exception("could not record error for event record %s", record_id)
+
+
+def _retry_state_write(fn, *args, attempts: int = 3, base_delay: float = 2.0, **kwargs):
+    """Retry the post-send Airtable state write with backoff.
+
+    This write is the critical one: the email has already left SMTP, and if
+    the state write is lost the next tick re-sends the same content (the
+    email-ledger window is shorter than the 24h tick interval, so it can't
+    catch this). Retrying here shrinks that window from "any Airtable blip"
+    to "Airtable down for the whole retry span" — and if we still fail, we
+    raise so the failure is recorded and the run exits non-zero (which fires
+    the OnFailure alert).
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            return fn(*args, **kwargs)
+        except Exception:
+            if attempt == attempts:
+                logger.critical(
+                    "state write %s failed after %d attempts — email was SENT but "
+                    "Airtable state is stale; next tick may re-send. Fix the row manually.",
+                    getattr(fn, "__name__", fn), attempts,
+                )
+                raise
+            delay = base_delay * (2 ** (attempt - 1))
+            logger.warning(
+                "state write %s failed (attempt %d/%d); retrying in %.0fs",
+                getattr(fn, "__name__", fn), attempt, attempts, delay,
+                exc_info=True,
+            )
+            time.sleep(delay)
 
 
 _TZ_ABBREVS = {
@@ -353,9 +385,9 @@ def _run_briefing(
             row.slug,
         )
         if is_initial:
-            airtable.reconcile_after_initial_send(row, sent_at=now)
+            _retry_state_write(airtable.reconcile_after_initial_send, row, sent_at=now)
         else:
-            airtable.reconcile_after_send(row, sent_at=now)
+            _retry_state_write(airtable.reconcile_after_send, row, sent_at=now)
         return
 
     # A genuine send (this tick's email reflects this tick's fetch) advances
@@ -363,12 +395,14 @@ def _run_briefing(
     if result.sent:
         max_cursor = max((p.created_at for p in profiles), default=cursor or "")
         if is_initial:
-            airtable.update_after_initial_send(
-                row, sent_at=now, attendee_cursor=max_cursor, attendee_count=len(profiles)
+            _retry_state_write(
+                airtable.update_after_initial_send,
+                row, sent_at=now, attendee_cursor=max_cursor, attendee_count=len(profiles),
             )
         else:
-            airtable.update_after_send(
-                row, sent_at=now, attendee_cursor=max_cursor, attendee_count=len(profiles)
+            _retry_state_write(
+                airtable.update_after_send,
+                row, sent_at=now, attendee_cursor=max_cursor, attendee_count=len(profiles),
             )
     else:
         # Not sent, and not the duplicate-reconcile handled above. send_engine
@@ -381,9 +415,32 @@ def _run_briefing(
         airtable.record_error(row, msg)
 
 
-def main(dry_run: bool = False) -> None:
+def main(dry_run: bool = False) -> int:
+    """Run one tick. Returns a process exit code:
+
+    0 = clean tick (sends, silent skips, or nothing eligible)
+    1 = run-level failure (config, Airtable fetch, or other setup crash)
+    2 = one or more events failed while the rest of the tick completed
+
+    Any non-zero exit puts the systemd unit in a failed state and fires the
+    OnFailure alert (deploy/digest-failure-alert.service), so problems are
+    emailed to staff instead of sitting silently in journald.
+    """
+    try:
+        return _run_tick(dry_run=dry_run)
+    except SystemExit:
+        raise
+    except Exception:
+        # Run-level boundary: without this, a config/Airtable/setup failure
+        # would be visible only as a traceback in journald.
+        logger.exception("digest tick failed before/outside per-event processing")
+        return 1
+
+
+def _run_tick(dry_run: bool = False) -> int:
     cfg = load_config()
     lock = _acquire_lock()
+    failed_events: list[str] = []
     try:
         airtable = AirtableClient(cfg.airtable_pat, cfg.airtable_base_id, cfg.airtable_table_name)
         eb = EventbriteClient(cfg.eventbrite_token)
@@ -437,6 +494,7 @@ def main(dry_run: bool = False) -> None:
         for record_id, row, parse_error in _parse_active_records(records):
             if parse_error is not None:
                 logger.error("event record %s invalid: %s", record_id, parse_error)
+                failed_events.append(record_id)
                 if not dry_run:
                     _record_error_safely(
                         airtable,
@@ -461,6 +519,7 @@ def main(dry_run: bool = False) -> None:
                     logger.info("event %s skipped: %s", row.slug, _skip_reason(row, now))
             except Exception as e:
                 logger.exception("event %s failed", row.slug)
+                failed_events.append(row.slug)
                 if not dry_run:
                     _record_error_safely(
                         airtable,
@@ -469,6 +528,14 @@ def main(dry_run: bool = False) -> None:
                     )
     finally:
         lock.close()
+
+    if failed_events:
+        logger.error(
+            "tick finished with %d failed event(s): %s",
+            len(failed_events), ", ".join(failed_events),
+        )
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
@@ -480,4 +547,4 @@ if __name__ == "__main__":
         level=args.log_level,
         format="%(asctime)s %(levelname)s %(name)s: %(message)s",
     )
-    main(dry_run=args.dry_run)
+    sys.exit(main(dry_run=args.dry_run))

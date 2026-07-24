@@ -74,21 +74,29 @@ else
     echo "  Log directory already exists"
 fi
 
-# Step 5: Install systemd service
+# Step 5: Install systemd service + logrotate config
 echo ""
 echo "[5/6] Installing systemd service..."
 SERVICE_FILE="deploy/eventbrite-automation.service"
 
-# Update the service file with the correct paths if needed
+# Rewrite the unit for the actual user and checkout location, whatever they
+# are (the checked-in unit is a template). Write to a temp copy so the repo
+# file stays pristine.
 CURRENT_USER=$(whoami)
-if [ "$CURRENT_USER" != "pi" ]; then
-    echo "  Updating service file for user: $CURRENT_USER"
-    sed -i "s|User=pi|User=$CURRENT_USER|g" $SERVICE_FILE
-    sed -i "s|Group=pi|Group=$CURRENT_USER|g" $SERVICE_FILE
-    sed -i "s|/home/pi/|/home/$CURRENT_USER/|g" $SERVICE_FILE
-fi
+TMP_SERVICE=$(mktemp)
+sed -e "s|^User=.*|User=$CURRENT_USER|" \
+    -e "s|^Group=.*|Group=$CURRENT_USER|" \
+    -e "s|/home/jamditis/eventbrite-automation|$PROJECT_DIR|g" \
+    "$SERVICE_FILE" > "$TMP_SERVICE"
+echo "  Service configured for user=$CURRENT_USER dir=$PROJECT_DIR"
 
-sudo cp $SERVICE_FILE /etc/systemd/system/
+sudo cp "$TMP_SERVICE" /etc/systemd/system/eventbrite-automation.service
+rm -f "$TMP_SERVICE"
+
+# Log rotation for the append-mode log files (they grow unbounded otherwise)
+sudo cp deploy/logrotate-eventbrite-automation /etc/logrotate.d/eventbrite-automation
+echo "  Logrotate config installed"
+
 sudo systemctl daemon-reload
 echo "  Service installed"
 
@@ -133,6 +141,6 @@ echo ""
 echo "6. Test the endpoint:"
 echo "   curl http://localhost:5000/"
 echo ""
-echo "7. Set up external access (ngrok or Cloudflare tunnel)"
+echo "7. Set up external access (Cloudflare Tunnel — the production setup)"
 echo "   See: deploy/README.md"
 echo ""

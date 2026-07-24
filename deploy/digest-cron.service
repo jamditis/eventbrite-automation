@@ -2,6 +2,10 @@
 Description=Eventbrite attendee digest cron
 After=network-online.target
 Wants=network-online.target
+# Any non-zero exit (run-level crash or per-event failure — see
+# digest/cron.py main() exit codes) emails the standing staff list so a
+# broken tick never fails silently.
+OnFailure=digest-failure-alert.service
 
 [Service]
 Type=oneshot

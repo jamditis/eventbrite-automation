@@ -27,9 +27,22 @@ class _MockResponse:
             raise RuntimeError(f"HTTP {self.status_code}")
 
 
+class _StubSession:
+    """Stands in for the client's retrying session; records every call."""
+
+    def __init__(self, fake_get):
+        self.get = fake_get
+
+
+def _stub_session(monkeypatch, fake_get):
+    monkeypatch.setattr(
+        "digest.eventbrite_client._build_session", lambda: _StubSession(fake_get)
+    )
+
+
 @pytest.fixture
 def mock_responses(monkeypatch):
-    """Stub requests.get to walk the paginated EB fixture; record every call."""
+    """Stub the session's get to walk the paginated EB fixture; record every call."""
     calls = []
 
     def fake_get(url, headers=None, params=None, timeout=None):
@@ -38,7 +51,7 @@ def mock_responses(monkeypatch):
             return _MockResponse(200, FIXTURE["page_two"])
         return _MockResponse(200, FIXTURE["page_one"])
 
-    monkeypatch.setattr("digest.eventbrite_client.requests.get", fake_get)
+    _stub_session(monkeypatch, fake_get)
     return calls
 
 
@@ -100,7 +113,7 @@ def test_fetch_attendees_raises_on_truncated_pagination(monkeypatch):
     def fake_get(url, headers=None, params=None, timeout=None):
         return _MockResponse(200, truncated)
 
-    monkeypatch.setattr("digest.eventbrite_client.requests.get", fake_get)
+    _stub_session(monkeypatch, fake_get)
     client = EventbriteClient(token="tok123")
     with pytest.raises(EventbritePaginationError, match="has_more_items"):
         list(client.fetch_attendees(event_id="EVT-1"))
@@ -133,7 +146,7 @@ def test_attendee_email_is_lowercased_at_construction(monkeypatch):
     def fake_get(url, headers=None, params=None, timeout=None):
         return _MockResponse(200, payload)
 
-    monkeypatch.setattr("digest.eventbrite_client.requests.get", fake_get)
+    _stub_session(monkeypatch, fake_get)
     client = EventbriteClient(token="tok123")
     attendee = next(client.fetch_attendees(event_id="EVT-1"))
     assert attendee.email == "mixed.case@example.com"
@@ -150,7 +163,7 @@ def test_fetch_event_returns_event_metadata(monkeypatch):
             },
         )
 
-    monkeypatch.setattr("digest.eventbrite_client.requests.get", fake_get)
+    _stub_session(monkeypatch, fake_get)
     client = EventbriteClient(token="tok123")
     event = client.fetch_event("EVT-1")
     assert event.id == "EVT-1"

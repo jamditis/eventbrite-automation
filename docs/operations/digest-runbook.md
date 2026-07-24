@@ -215,7 +215,7 @@ If a digest goes out wrong (hallucinated profiles, wrong recipients, broken form
 
 These are explicitly out of scope for the first live-test phase. Track in follow-up tickets if any becomes a real-world problem:
 
-- EB API retry/backoff on 5xx or 429 — the cron logs the failure into `Last error` and skips that event for the tick. The next daily tick retries it (~24h later).
-- SMTP retry — same: failures log and surface; the next daily tick retries (~24h later).
-- Telegram alerts on catastrophic cron failure — not wired. Operators rely on `journalctl` + `Last error` for visibility.
+- ~~EB API retry/backoff on 5xx or 429~~ — wired as of 2026-07: Eventbrite reads retry 3x with backoff (`digest/eventbrite_client.py:_build_session`). A failure that survives the retries still logs into `Last error`, skips that event for the tick, and now also emails staff via the OnFailure alert; the next daily tick retries it (~24h later).
+- SMTP retry — failures log and surface (and email staff via the OnFailure alert); the next daily tick retries (~24h later). Connections are bounded by a 60s timeout so a hung SMTP session can't starve the rest of the tick. The post-send Airtable state write retries 3x with backoff (`digest/cron.py:_retry_state_write`) because losing it is what causes a duplicate send.
+- ~~Alerts on catastrophic cron failure~~ — wired as of 2026-07: any tick that exits non-zero fires `digest-failure-alert.service` (systemd `OnFailure=`), which emails the standing staff list with the recent journal tail (`digest/alert_failure.py`; recipients from `ALERT_RECIPIENTS` or `BCC_ALWAYS`). Telegram creds in config remain unused.
 - Auto-refreshing `Event start (ET)` from Eventbrite each tick — staff must update manually if the EB event reschedules.

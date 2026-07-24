@@ -5,7 +5,7 @@ Configuration constants for Eventbrite automation.
 import os
 import subprocess
 from pathlib import Path
-from typing import Optional
+
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -18,7 +18,7 @@ TEMP_DIR = PROJECT_ROOT / "temp"
 TEMP_DIR.mkdir(exist_ok=True)
 
 
-def _pass(key: str) -> Optional[str]:
+def _pass(key: str) -> str | None:
     """Read a secret from the pass store. Returns None if not found."""
     try:
         return subprocess.check_output(
@@ -147,6 +147,30 @@ PROCESSED_STATUS = "Eventbrite draft created"
 
 # Status value that triggers image regeneration
 REGENERATE_STATUS = "Regenerate image"
+
+# Status value set when processing fails, so failures are visible in the
+# Airtable Status column (not just the Logs field). "Needs review" is already
+# an unprocessed status, so a failed record is picked up again by the next
+# process_all run once the underlying issue is fixed.
+ERROR_STATUS = os.getenv("ERROR_STATUS", "Needs review")
+
+# Outbound HTTP timeouts (connect, read) in seconds. Every Eventbrite/Airtable
+# call must be bounded — an unbounded call can hang a webhook worker thread
+# indefinitely and silently stall processing.
+HTTP_TIMEOUT = (10, 60)
+# S3 image upload moves ~1-2 MB from a Raspberry Pi; give the read side longer.
+UPLOAD_TIMEOUT = (10, 180)
+# Gemini image generation regularly takes 30-60s; bound it so a stalled call
+# fails over to the default banner instead of hanging forever. Milliseconds,
+# per google-genai HttpOptions.
+GEMINI_TIMEOUT_MS = 180_000
+
+# Opt-in webhook authentication. When true AND a webhook secret is configured,
+# POST endpoints require the secret via the X-Webhook-Secret header or a
+# "secret" field in the JSON body. Off by default because the deployed
+# Airtable automation script does not send a secret yet — enable only after
+# updating the script (see docs/operations/webhook-runbook.md).
+WEBHOOK_REQUIRE_AUTH = os.getenv("WEBHOOK_REQUIRE_AUTH", "").lower() in ("1", "true", "yes")
 
 # Image prompt template for generating the main visual element
 VISUAL_PROMPT_TEMPLATE = """Create a clean, modern illustration or graphic for an event about: "{title}"

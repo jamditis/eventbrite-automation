@@ -4,21 +4,23 @@ Airtable API client for event automation.
 Handles fetching new event requests and updating records with Eventbrite URLs.
 """
 
+import logging
 import re
-from typing import Optional
 from dataclasses import dataclass
 from datetime import datetime
 
 from pyairtable import Api
 
 from config import (
-    AIRTABLE_PAT,
     AIRTABLE_BASE_ID,
-    AIRTABLE_TABLE_ID,
     AIRTABLE_FIELDS,
-    UNPROCESSED_STATUSES,
+    AIRTABLE_PAT,
+    AIRTABLE_TABLE_ID,
     PROCESSED_STATUS,
+    UNPROCESSED_STATUSES,
 )
+
+logger = logging.getLogger("eventbrite.airtable")
 
 
 @dataclass
@@ -29,23 +31,23 @@ class EventRecord:
     title: str
     brief_description: str
     full_description: str
-    start_datetime: Optional[datetime]
-    end_datetime: Optional[datetime]
+    start_datetime: datetime | None
+    end_datetime: datetime | None
     event_type: str  # "In-person" or "Virtual"
     pricing: str  # "Free" or "Paid"
-    speaker_info: Optional[str] = None
-    location: Optional[str] = None
-    requester: Optional[str] = None
-    status: Optional[str] = None
-    eventbrite_status: Optional[str] = None
+    speaker_info: str | None = None
+    location: str | None = None
+    requester: str | None = None
+    status: str | None = None
+    eventbrite_status: str | None = None
     # Image generation customization
-    art_style: Optional[str] = None  # e.g., "minimalist", "watercolor", "bold geometric"
-    image_prompt: Optional[str] = None  # Additional prompt guidance
-    primary_color: Optional[str] = None  # Hex code or color name
-    secondary_color: Optional[str] = None  # Hex code or color name
+    art_style: str | None = None  # e.g., "minimalist", "watercolor", "bold geometric"
+    image_prompt: str | None = None  # Additional prompt guidance
+    primary_color: str | None = None  # Hex code or color name
+    secondary_color: str | None = None  # Hex code or color name
     # Eventbrite tracking
-    eventbrite_event_id: Optional[str] = None  # For updating existing events
-    eventbrite_url: Optional[str] = None  # URL of the created event
+    eventbrite_event_id: str | None = None  # For updating existing events
+    eventbrite_url: str | None = None  # URL of the created event
 
     @property
     def has_valid_brief_description(self) -> bool:
@@ -89,7 +91,7 @@ class EventRecord:
         return "free" in self.pricing.lower()
 
     @property
-    def speaker_info_html(self) -> Optional[str]:
+    def speaker_info_html(self) -> str | None:
         """Format speaker information for HTML display."""
         if not self.speaker_info:
             return None
@@ -101,7 +103,9 @@ class AirtableClient:
     """Client for interacting with Airtable event request table."""
 
     def __init__(self):
-        self.api = Api(AIRTABLE_PAT)
+        # Bounded requests so a hung Airtable call can't stall a worker thread.
+        # pyairtable retries 429 rate limits internally.
+        self.api = Api(AIRTABLE_PAT, timeout=(10, 60))
         self.table = self.api.table(AIRTABLE_BASE_ID, AIRTABLE_TABLE_ID)
 
     def get_all_records(self) -> list[dict]:
@@ -144,26 +148,25 @@ class AirtableClient:
             else:
                 records = self.table.all()
         except Exception as e:
-            print(f"Note: Could not filter by Status field, fetching all records")
-            print(f"      (Error: {e})")
+            logger.warning("Could not filter by Status field (%s); fetching all records", e)
             records = self.table.all()
 
         return [self._parse_record(r) for r in records]
 
-    def get_record_by_id(self, record_id: str) -> Optional[EventRecord]:
+    def get_record_by_id(self, record_id: str) -> EventRecord | None:
         """Fetch a specific record by ID."""
         try:
             record = self.table.get(record_id)
             return self._parse_record(record)
         except Exception as e:
-            print(f"Error fetching record {record_id}: {e}")
+            logger.error("Error fetching record %s: %s", record_id, e)
             return None
 
     def mark_as_processed(
         self,
         record_id: str,
         eventbrite_url: str,
-        eventbrite_event_id: Optional[str] = None,
+        eventbrite_event_id: str | None = None,
     ) -> bool:
         """
         Mark a record as processed by updating the Status field.
@@ -181,7 +184,7 @@ class AirtableClient:
         event_id_field = AIRTABLE_FIELDS.get("eventbrite_event_id")
 
         if not status_field:
-            print("Warning: No Status field configured, cannot mark as processed")
+            logger.warning("No Status field configured, cannot mark as processed")
             return False
 
         try:
@@ -197,21 +200,23 @@ class AirtableClient:
                 update_data[event_id_field] = eventbrite_event_id
 
             self.table.update(record_id, update_data)
-            print(f"Marked record {record_id} as '{PROCESSED_STATUS}'")
-            print(f"Eventbrite URL: {eventbrite_url}")
-            if eventbrite_event_id:
-                print(f"Eventbrite event ID: {eventbrite_event_id}")
+            logger.info(
+                "Marked record %s as '%s' (url=%s, event_id=%s)",
+                record_id, PROCESSED_STATUS, eventbrite_url, eventbrite_event_id,
+            )
             return True
-        except Exception as e:
-            print(f"Error updating record {record_id}: {e}")
-            print(f"Note: Make sure '{PROCESSED_STATUS}' is a valid option in the Status field")
+        except Exception:
+            logger.exception(
+                "Error updating record %s — make sure '%s' is a valid option in the Status field",
+                record_id, PROCESSED_STATUS,
+            )
             return False
 
     def add_image_attachment(
         self,
         record_id: str,
         image_url: str,
-        filename: Optional[str] = None,
+        filename: str | None = None,
     ) -> bool:
         """
         Add an image attachment to the Generated images field.
@@ -230,7 +235,7 @@ class AirtableClient:
         attachment_field = AIRTABLE_FIELDS.get("generated_images")
 
         if not attachment_field:
-            print("Warning: No Generated images field configured")
+            logger.warning("No Generated images field configured")
             return False
 
         try:
@@ -244,13 +249,13 @@ class AirtableClient:
                 new_attachment["filename"] = filename
 
             # Append new attachment to existing ones
-            updated_attachments = existing + [new_attachment]
+            updated_attachments = [*existing, new_attachment]
 
             self.table.update(record_id, {attachment_field: updated_attachments})
-            print(f"Added image attachment to record {record_id}")
+            logger.info("Added image attachment to record %s", record_id)
             return True
-        except Exception as e:
-            print(f"Error adding attachment to {record_id}: {e}")
+        except Exception:
+            logger.exception("Error adding attachment to %s", record_id)
             return False
 
     def update_status(self, record_id: str, new_status: str) -> bool:
@@ -267,22 +272,22 @@ class AirtableClient:
         status_field = AIRTABLE_FIELDS.get("status")
 
         if not status_field:
-            print("Warning: No Status field configured")
+            logger.warning("No Status field configured")
             return False
 
         try:
             self.table.update(record_id, {status_field: new_status})
-            print(f"Updated record {record_id} status to '{new_status}'")
+            logger.info("Updated record %s status to '%s'", record_id, new_status)
             return True
-        except Exception as e:
-            print(f"Error updating status for {record_id}: {e}")
+        except Exception:
+            logger.exception("Error updating status for %s", record_id)
             return False
 
     def update_log(self, record_id: str, message: str) -> bool:
         """Append a timestamped message to the Automation log field."""
         log_field = AIRTABLE_FIELDS.get("automation_log")
         if not log_field:
-            print(f"Warning: No Automation log field configured")
+            logger.warning("No Automation log field configured")
             return False
 
         try:
@@ -301,8 +306,8 @@ class AirtableClient:
 
             self.table.update(record_id, {log_field: updated})
             return True
-        except Exception as e:
-            print(f"Error updating log for {record_id}: {e}")
+        except Exception:
+            logger.exception("Error updating log for %s", record_id)
             return False
 
     def update_event_id(self, record_id: str, event_id: str) -> bool:
@@ -312,14 +317,14 @@ class AirtableClient:
             return False
         try:
             self.table.update(record_id, {field: event_id})
-            print(f"Stored event ID {event_id} for record {record_id}")
+            logger.info("Stored event ID %s for record %s", event_id, record_id)
             return True
-        except Exception as e:
-            print(f"Error storing event ID for {record_id}: {e}")
+        except Exception:
+            logger.exception("Error storing event ID for %s", record_id)
             return False
 
     @staticmethod
-    def extract_event_id_from_url(url: str) -> Optional[str]:
+    def extract_event_id_from_url(url: str) -> str | None:
         """Extract Eventbrite event ID from a URL like .../tickets-1234567890."""
         if not url:
             return None
@@ -337,7 +342,7 @@ class AirtableClient:
             try:
                 start_datetime = datetime.fromisoformat(datetime_str.replace("Z", "+00:00"))
             except (ValueError, AttributeError):
-                print(f"Warning: Could not parse start datetime: {datetime_str}")
+                logger.warning("Could not parse start datetime: %s", datetime_str)
 
         # Parse end datetime if present
         end_datetime = None
@@ -346,7 +351,7 @@ class AirtableClient:
             try:
                 end_datetime = datetime.fromisoformat(end_datetime_str.replace("Z", "+00:00"))
             except (ValueError, AttributeError):
-                print(f"Warning: Could not parse end datetime: {end_datetime_str}")
+                logger.warning("Could not parse end datetime: %s", end_datetime_str)
 
         return EventRecord(
             record_id=record["id"],
@@ -382,7 +387,7 @@ def test_connection():
     print("\nChecking table fields...")
     fields = client.get_table_fields()
     if fields:
-        print(f"Available fields in table:")
+        print("Available fields in table:")
         for f in fields:
             print(f"  - {f}")
     else:

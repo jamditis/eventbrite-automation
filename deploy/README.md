@@ -1,19 +1,22 @@
 # Raspberry Pi deployment guide
 
-This guide walks you through deploying the Eventbrite automation webhook server to a Raspberry Pi.
+This guide covers deploying both subsystems to a Raspberry Pi (production host: houseofjawn):
 
-## Quick start
+1. **Webhook draft creator** — `eventbrite-automation.service` (this guide)
+2. **Attendee digest** — `digest-cron.timer` + `digest-cron.service`; install with `install-digest.sh`, operate via [`docs/operations/digest-runbook.md`](../docs/operations/digest-runbook.md)
+
+## Quick start (webhook server)
 
 ```bash
-# 1. SSH to your Pi
-ssh pi@raspberrypi.local
+# 1. SSH to the Pi
+ssh <user>@<pi-hostname>
 
 # 2. Clone the repository
-cd /home/pi
 git clone https://github.com/jamditis/eventbrite-automation.git
 cd eventbrite-automation
 
-# 3. Run the setup script
+# 3. Run the setup script (creates venv, installs deps, installs the
+#    systemd unit rewritten for your user + checkout path, installs logrotate)
 chmod +x deploy/setup.sh
 ./deploy/setup.sh
 
@@ -33,16 +36,16 @@ sudo systemctl start eventbrite-automation
 Airtable Form
      |
      v
-Airtable Automation (triggers on new record)
+Airtable Automation (Script action, triggers on Status = "Todo")
      |
      v
 POST webhook to external URL
      |
      v
-ngrok/Cloudflare tunnel
+Cloudflare Tunnel
      |
      v
-Raspberry Pi (Flask server on port 5000)
+Raspberry Pi (gunicorn on port 5000)
      |
      +--> Generates image with Gemini AI
      |
@@ -56,11 +59,18 @@ Updates Airtable record status
 
 | File | Purpose |
 |------|---------|
-| `setup.sh` | Automated setup script for Pi |
-| `eventbrite-automation.service` | systemd service for the webhook server |
-| `ngrok.service` | systemd service for ngrok tunnel |
+| `setup.sh` | Automated setup script for the webhook server |
+| `eventbrite-automation.service` | systemd unit for the webhook server (template — setup.sh rewrites user/paths) |
+| `logrotate-eventbrite-automation` | logrotate config for the webhook log files (installed by setup.sh) |
+| `install-digest.sh` | Automated setup for the digest cron units |
+| `digest-cron.service` / `digest-cron.timer` | systemd units for the daily attendee digest |
+| `digest-failure-alert.service` | OnFailure unit that emails staff when a digest tick fails |
+| `env.example` | Template for `.env.digest` (digest subsystem) |
+| `.env.example` | Template for `.env` (webhook subsystem) |
+| `create-airtable-base.py` | One-time script that created the EventDigests Airtable base |
+| `ngrok.service` | Legacy ngrok tunnel unit — not used in production (Cloudflare Tunnel is) |
 
-## Environment variables
+## Environment variables (webhook)
 
 Create a `.env` file in the project root with:
 
@@ -72,60 +82,27 @@ AIRTABLE_TABLE_ID=tblXXXXXXXXXXXXXX
 GEMINI_API_KEY=AIza_xxxxxxxxxxxxxxxxxxxxxxxx
 EVENTBRITE_PRIVATE_TOKEN=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
 
-# Optional (for security)
+# Optional webhook authentication — see "Security notes" below before enabling
 WEBHOOK_SECRET=your_random_secret_string
+# WEBHOOK_REQUIRE_AUTH=true
 ```
+
+On houseofjawn, secrets are read from the pass store first (`config.py:_pass`)
+and fall back to `.env` values.
 
 Generate a webhook secret with:
 ```bash
 python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
-## External access options
+## External access
 
-The webhook needs to be accessible from the internet so Airtable can send POST requests to it.
+The webhook needs to be reachable from the internet so Airtable can POST to it.
 
-### Option A: ngrok (easiest)
+### Production: Cloudflare Tunnel
 
-**Install ngrok:**
-```bash
-# Download and install
-curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | \
-  sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
-echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | \
-  sudo tee /etc/apt/sources.list.d/ngrok.list
-sudo apt update && sudo apt install ngrok
-```
-
-**Authenticate (one-time):**
-1. Create free account at https://ngrok.com
-2. Get your authtoken from the dashboard
-3. Run: `ngrok config add-authtoken YOUR_TOKEN`
-
-**Start tunnel manually:**
-```bash
-ngrok http 5000
-```
-Copy the HTTPS URL (e.g., `https://abc123.ngrok-free.app`)
-
-**Or run as a service:**
-```bash
-sudo cp deploy/ngrok.service /etc/systemd/system/
-sudo systemctl daemon-reload
-sudo systemctl enable ngrok
-sudo systemctl start ngrok
-```
-
-Check ngrok URL:
-```bash
-curl http://localhost:4040/api/tunnels | jq '.tunnels[0].public_url'
-```
-
-**Note:** Free ngrok URLs change when restarted. Consider ngrok paid plan for static URLs.
-
-### Option B: Cloudflare tunnel (more stable)
-
-For a permanent URL with a custom domain:
+The live deployment serves `https://eventbrite.amditis.tech` through the
+existing `houseofjawn` Cloudflare tunnel. For a fresh setup:
 
 ```bash
 # Install cloudflared
@@ -145,23 +122,41 @@ cloudflared tunnel route dns eventbrite-automation events.yourdomain.com
 cloudflared tunnel run eventbrite-automation
 ```
 
+Unlike ngrok, the URL is permanent — the Airtable automation never needs
+re-pointing after a restart.
+
+### Legacy: ngrok
+
+`ngrok.service` remains in this folder from the original deployment but is
+**not used in production**: free ngrok URLs change on every restart, which
+silently breaks the Airtable → webhook path until someone updates the
+automation URL. If you must use it for a quick test: `ngrok http 5000`.
+
 ## Airtable automation setup
 
-1. Go to your Airtable base
-2. Click "Automations" tab
-3. Create new automation
-4. **Trigger:** "When a record matches conditions"
-   - Table: Event requests
-   - Condition: Status is empty OR Status is "Todo"
-5. **Action:** "Send a webhook"
-   - URL: `https://YOUR_NGROK_URL/webhook/airtable`
-   - Method: POST
-   - Body:
-   ```json
-   {
-     "record_id": "{RECORD_ID()}"
-   }
-   ```
+The automation uses a **Script action** (not the native "Send a webhook"
+action) so the request body and error handling stay under our control.
+
+1. Go to your Airtable base → "Automations" tab
+2. Create new automation
+3. **Trigger:** "When a record matches conditions" → Status is "Todo"
+4. **Action:** "Run a script" with input variable `recordId` mapped to
+   "Record ID" from the trigger, and this script:
+
+```javascript
+let recordId = input.config().recordId;
+
+await fetch('https://eventbrite.amditis.tech/webhook/airtable', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({record_id: recordId})
+});
+
+output.set('status', 'sent');
+```
+
+If you enable `WEBHOOK_REQUIRE_AUTH`, add the secret to the body:
+`body: JSON.stringify({record_id: recordId, secret: 'YOUR_SECRET'})`.
 
 ## Managing the service
 
@@ -178,7 +173,7 @@ sudo systemctl status eventbrite-automation
 sudo systemctl enable eventbrite-automation
 sudo systemctl disable eventbrite-automation
 
-# View logs
+# View logs (rotated weekly / at 20MB by logrotate)
 tail -f /var/log/eventbrite-automation/webhook.log
 tail -f /var/log/eventbrite-automation/webhook-error.log
 journalctl -u eventbrite-automation -f
@@ -186,7 +181,7 @@ journalctl -u eventbrite-automation -f
 
 ## Testing
 
-**Health check:**
+**Health check (also reports in-flight background jobs):**
 ```bash
 curl http://localhost:5000/
 ```
@@ -207,6 +202,9 @@ curl -X POST http://localhost:5000/webhook/airtable \
 
 ## Troubleshooting
 
+See [`docs/operations/webhook-runbook.md`](../docs/operations/webhook-runbook.md)
+for the full incident-response guide. Quick checks:
+
 ### Service won't start
 ```bash
 # Check for errors
@@ -219,8 +217,8 @@ journalctl -u eventbrite-automation --no-pager -n 50
 ```
 
 ### Webhook not receiving requests
-1. Check ngrok/tunnel is running
-2. Verify URL in Airtable automation matches external URL
+1. Check the Cloudflare tunnel is running
+2. Verify URL in Airtable automation matches the external URL
 3. Check Pi firewall: `sudo ufw status`
 
 ### API errors
@@ -231,12 +229,13 @@ journalctl -u eventbrite-automation --no-pager -n 50
 ### Image generation fails
 1. Check GEMINI_API_KEY is valid
 2. Verify internet connectivity
-3. The system will fall back to a simple branded image if Gemini fails
+3. The system falls back to `templates/default-banner.png` if Gemini fails,
+   and writes a note to the record's Logs field so staff can regenerate
 
 ## Updating
 
 ```bash
-cd /home/pi/eventbrite-automation
+cd <checkout-directory>
 git pull
 sudo systemctl restart eventbrite-automation
 ```
@@ -244,6 +243,9 @@ sudo systemctl restart eventbrite-automation
 ## Security notes
 
 - Never commit `.env` to git
-- Use WEBHOOK_SECRET to verify requests are from Airtable
+- **Webhook auth is off by default.** `WEBHOOK_SECRET` alone does nothing —
+  requests are only verified when `WEBHOOK_REQUIRE_AUTH=true` is also set.
+  Before enabling it, update the Airtable script to send the secret in the
+  JSON body (see above), or every automation request will get a 401.
 - Consider IP whitelisting if your Pi has a static IP
 - Keep the Pi's OS and packages updated

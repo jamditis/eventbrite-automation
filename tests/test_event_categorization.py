@@ -7,10 +7,9 @@ into the create payload and confirm a blanked config value is skipped.
 
 from datetime import datetime
 
-import eventbrite_client as ebc
-from eventbrite_client import EventbriteClient
 from airtable_client import EventRecord
 from config import EVENT_DEFAULTS
+from eventbrite_client import EventbriteClient
 
 CCM_ORG = "66857244479"
 
@@ -46,12 +45,12 @@ def _client_with_captured_posts(monkeypatch):
     """A client whose org lookup is stubbed and whose POSTs are captured."""
     posts = []
 
-    def fake_post(url, headers=None, json=None):
+    def fake_post(url, headers=None, json=None, timeout=None, **kwargs):
         posts.append((url, json))
         return _Resp(200, {"id": "999", "url": "https://eventbrite.com/e/999"})
 
-    monkeypatch.setattr(ebc.requests, "post", fake_post)
     client = EventbriteClient()
+    monkeypatch.setattr(client.session, "post", fake_post)
     client._organization_id = CCM_ORG  # skip the org-resolution GET
     return client, posts
 

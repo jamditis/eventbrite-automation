@@ -142,15 +142,19 @@ The image includes the event title directly, eliminating need for text overlay. 
 
 ### Airtable field mapping
 
-Fields are mapped in `config.py:AIRTABLE_FIELDS`. The system expects these Airtable columns:
+Fields are mapped in `config.py:AIRTABLE_FIELDS` — that mapping is the
+source of truth for the exact column names (several are long form-question
+sentences, e.g. the brief description column is literally "Please provide a
+brief description of the event to be used for creating the Eventbrite
+listing (max 140 characters)"). Friendly labels below:
 
 **Required:**
 - `Title of event` - Event name
-- `Brief description (max 140 chars)` - Eventbrite summary
-- `Full description` - Detailed description (markdown supported)
-- `Proposed start date/time` - Event start (UTC)
-- `Event type` - "Virtual" or "In-person"
-- `Free or paid?` - Pricing
+- Brief description - Eventbrite summary (max 140 chars)
+- Full description - Detailed description (markdown supported)
+- Proposed start date/time - Event start (UTC)
+- Event type (in-person or virtual)
+- Free or paid?
 - `Status` - Processing status
 
 **Optional (image customization):**
@@ -163,6 +167,8 @@ Fields are mapped in `config.py:AIRTABLE_FIELDS`. The system expects these Airta
 - `Eventbrite event ID` - For updates/regeneration
 - `Eventbrite URL` - Link to created event
 - `Generated images` - Attachment field archiving all images
+- `Logs` - Timestamped automation log: errors, fallback-banner notices, and
+  partial-success warnings land here so staff never need server access
 
 ### Internal notes filtering
 
@@ -224,12 +230,16 @@ Requires `Eventbrite event ID` field to be populated. Uses current values of ima
 
 ### GET /webhook/status/{record_id}
 
-Check processing status for async requests.
+Check processing status for async requests. Returns status and timestamps
+only (no result payload); unknown record IDs return HTTP 404 with
+`{"status": "unknown"}`. Status is held in memory, so it resets when the
+service restarts — check the Airtable record's Status/Logs fields for the
+durable outcome.
 
 ```json
 {"status": "processing", "started": "2026-01-29T13:03:06.555106"}
-{"status": "completed", "result": {...}, "completed": "2026-01-29T13:03:36.675291"}
-{"status": "failed", "result": {"error": "..."}, "completed": "..."}
+{"status": "completed", "started": "...", "completed": "2026-01-29T13:03:36.675291"}
+{"status": "failed", "started": "...", "completed": "..."}
 ```
 
 ## Adapting for your own use
@@ -246,19 +256,23 @@ AIRTABLE_FIELDS = {
 }
 ```
 
-### 2. Configure Eventbrite organizer
+### 2. Configure Eventbrite organizer + organization
 
-Set your organizer ID in `config.py`:
+Set both IDs in `config.py` — they are different things:
 
 ```python
-EVENTBRITE_ORGANIZER_ID = "your_organizer_id"
+EVENTBRITE_ORGANIZER_ID = "your_organizer_profile_id"   # goes in the event body
+EVENTBRITE_ORGANIZATION_ID = "your_organization_id"     # goes in the create-event URL
 ```
 
-Find your organizer ID via:
+Find your organization ID via:
 ```bash
 curl -H "Authorization: Bearer $EVENTBRITE_PRIVATE_TOKEN" \
   https://www.eventbriteapi.com/v3/users/me/organizations/
 ```
+
+Pinning the organization matters when a token can see multiple orgs — the
+first listed org may not be one the token can create events under (issue #32).
 
 ### 3. Customize image generation
 
@@ -297,8 +311,10 @@ Add `recordId` as an input variable mapped to "Record ID" from trigger.
 See [`deploy/README.md`](deploy/README.md) for full deployment guide including:
 - Raspberry Pi setup
 - systemd service configuration
-- ngrok / Cloudflare tunnel for external access
-- Log management
+- Cloudflare Tunnel for external access
+- Log management (logrotate)
+
+Operations and incident response: [`docs/operations/webhook-runbook.md`](docs/operations/webhook-runbook.md).
 
 Quick deployment:
 ```bash
@@ -333,22 +349,29 @@ python main.py --test
 
 | Problem | Solution |
 |---------|----------|
+| Record Status is "Needs review" | The pipeline failed; the reason is in the record's `Logs` field. Fix and set Status back to "Todo" |
 | Airtable timeout | Ensure webhook returns 202 async (default behavior) |
-| Gemini 401 | API key was revoked (Google scans for exposed keys) |
+| Gemini 401 | API key was revoked (Google scans for exposed keys). Affected records shipped the default banner — regenerate after fixing |
 | Eventbrite past date error | Event dates must be in the future |
 | Image upload fails | Check the 3-step upload process, especially no Content-Type on step 1 |
 | Wrong timezone | Ensure `_to_eastern()` is called before formatting times |
-| Processing status lost | Status dict is in-memory; check logs if service restarted |
+| Processing status lost | Status dict is in-memory; the Airtable record's Status/Logs fields are the durable record |
+
+Full incident-response guide: [`docs/operations/webhook-runbook.md`](docs/operations/webhook-runbook.md).
 
 ## Dependencies
 
-- Python 3.9+
-- Flask + gunicorn
-- google-generativeai (Gemini SDK)
+See `requirements.txt` for versions. Highlights:
+
+- Python 3.11+
+- Flask + gunicorn (webhook server)
+- google-genai (Gemini SDK)
 - pyairtable
 - requests
 - python-dotenv
-- pytz
+- Pillow (image handling)
+- jinja2 + python-dateutil (attendee digest)
+- pytest + ruff (tests and lint)
 
 ## License
 

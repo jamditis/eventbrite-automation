@@ -5,23 +5,40 @@ Uses Gemini AI to generate complete event banner images including text.
 """
 
 import io
+import logging
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
 import requests
-from PIL import Image
-
 from google import genai
 from google.genai import types
+from PIL import Image
 
+from airtable_client import EventRecord
 from config import (
+    CCM_BRAND,
     GEMINI_API_KEY,
     GEMINI_MODEL,
-    CCM_BRAND,
+    GEMINI_TIMEOUT_MS,
     IMAGE_SETTINGS,
     TEMP_DIR,
 )
-from airtable_client import EventRecord
+
+logger = logging.getLogger("eventbrite.images")
+
+
+@dataclass
+class GeneratedImage:
+    """Result of an image-generation attempt.
+
+    `used_fallback` is True when Gemini failed and the default CCM banner was
+    substituted — callers surface this in the Airtable log so staff know the
+    banner is generic and can trigger a regeneration.
+    """
+
+    path: Path
+    used_fallback: bool = False
+    error: str | None = None
 
 
 # Full image generation prompt
@@ -80,14 +97,19 @@ class ImageGenerator:
     """Generates complete event banner images using Gemini AI."""
 
     def __init__(self):
-        self.client = genai.Client(api_key=GEMINI_API_KEY)
-        self._logo_cache: Optional[Image.Image] = None
+        # Bounded so a stalled Gemini call fails over to the default banner
+        # instead of hanging the worker thread indefinitely.
+        self.client = genai.Client(
+            api_key=GEMINI_API_KEY,
+            http_options=types.HttpOptions(timeout=GEMINI_TIMEOUT_MS),
+        )
+        self._logo_cache: Image.Image | None = None
 
     def generate_event_image(
         self,
         event: EventRecord,
-        output_path: Optional[Path] = None,
-    ) -> Path:
+        output_path: Path | None = None,
+    ) -> GeneratedImage:
         """
         Generate a complete event banner image.
 
@@ -96,12 +118,13 @@ class ImageGenerator:
             output_path: Where to save the image. If None, uses temp directory.
 
         Returns:
-            Path to the generated image
+            GeneratedImage with the image path and whether the fallback banner
+            was used (so callers can flag it to staff).
         """
         if output_path is None:
             output_path = TEMP_DIR / f"event_{event.record_id}.png"
 
-        print(f"Generating image for: {event.title}")
+        logger.info("Generating image for: %s", event.title)
 
         try:
             # Generate complete image with Gemini
@@ -114,13 +137,16 @@ class ImageGenerator:
 
             # Save the image
             image.save(output_path, "PNG", quality=95)
-            print(f"Image saved to: {output_path}")
-            return output_path
+            logger.info("Image saved to: %s", output_path)
+            return GeneratedImage(path=output_path)
 
         except Exception as e:
-            print(f"Error generating image: {e}")
-            print("Using fallback branded image...")
-            return self._create_fallback_image(event.title, output_path)
+            logger.exception("Gemini image generation failed; using fallback branded image")
+            return GeneratedImage(
+                path=self._create_fallback_image(event.title, output_path),
+                used_fallback=True,
+                error=f"{type(e).__name__}: {e}",
+            )
 
     def _add_logo(self, image: Image.Image) -> Image.Image:
         """Overlay the CCM logo on the image."""
@@ -147,7 +173,7 @@ class ImageGenerator:
 
         return image
 
-    def _get_logo(self) -> Optional[Image.Image]:
+    def _get_logo(self) -> Image.Image | None:
         """Download and cache the CCM logo."""
         if self._logo_cache is not None:
             return self._logo_cache
@@ -161,7 +187,7 @@ class ImageGenerator:
             self._logo_cache = Image.open(io.BytesIO(response.content))
             return self._logo_cache
         except Exception as e:
-            print(f"  Warning: Could not download logo: {e}")
+            logger.warning("Could not download logo: %s", e)
             return None
 
     def _build_custom_prompt(self, event: EventRecord) -> str:
@@ -196,7 +222,10 @@ class ImageGenerator:
         # Append customizations to the prompt
         if customizations:
             prompt += "\n" + "\n".join(customizations)
-            print(f"  Using custom image settings: art_style={event.art_style}, colors={event.primary_color}/{event.secondary_color}")
+            logger.info(
+                "Using custom image settings: art_style=%s, colors=%s/%s",
+                event.art_style, event.primary_color, event.secondary_color,
+            )
 
         return prompt
 
@@ -204,7 +233,7 @@ class ImageGenerator:
         """Generate the complete event banner using Gemini."""
         prompt = self._build_custom_prompt(event)
 
-        print("  Generating with Gemini...")
+        logger.info("Generating with Gemini...")
 
         response = self.client.models.generate_content(
             model=GEMINI_MODEL,
@@ -232,14 +261,14 @@ class ImageGenerator:
 
         if default_banner.exists():
             shutil.copy(default_banner, output_path)
-            print(f"Using CCM default banner: {output_path}")
+            logger.info("Using CCM default banner: %s", output_path)
         else:
             # Ultimate fallback: create a simple image
             width = IMAGE_SETTINGS["width"]
             height = IMAGE_SETTINGS["height"]
             canvas = Image.new("RGB", (width, height), "#1a1a1a")
             canvas.save(output_path, "PNG")
-            print(f"Created minimal fallback image: {output_path}")
+            logger.warning("Default banner missing; created minimal fallback image: %s", output_path)
 
         return output_path
 
@@ -263,8 +292,8 @@ def test_image_generation():
     generator = ImageGenerator()
     output_path = TEMP_DIR / "test_complete_image.png"
     result = generator.generate_event_image(test_event, output_path)
-    print(f"Test image generated: {result}")
-    return result
+    print(f"Test image generated: {result.path} (fallback={result.used_fallback})")
+    return result.path
 
 
 if __name__ == "__main__":
