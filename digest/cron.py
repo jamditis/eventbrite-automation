@@ -275,26 +275,32 @@ def _run_briefing(
     is_initial: bool,
     dry_run: bool,
     logo_url: str = "",
-) -> None:
+) -> bool:
+    """Run one event's briefing. Returns True on success (including silent
+    skips), False on a handled per-event failure — the caller counts False
+    toward the tick's failed events so the OnFailure alert fires for it.
+    """
     logger.info("processing %s (initial=%s)", row.slug, is_initial)
 
     # Recipient-validity gate: a row missing speaker_emails or lead_host_email
     # must not reach SMTP. Without this guard, an empty `to` list still
     # produces a deliverable message via the always-BCC addresses, and the
     # success path would then mark Airtable as sent — speakers receive
-    # nothing while ops sees green.
+    # nothing while ops sees green. These are per-event failures: a requested
+    # digest did not go out, so they must fail the tick (and alert staff),
+    # not just write `Last error`.
     if not row.speaker_emails:
         msg = f"speaker_emails empty for row {row.record_id}; refusing to send digest"
         logger.error(msg)
         if not dry_run:
             airtable.record_error(row, msg)
-        return
+        return False
     if not row.lead_host_email:
         msg = f"lead_host_email empty for row {row.record_id}; refusing to send digest"
         logger.error(msg)
         if not dry_run:
             airtable.record_error(row, msg)
-        return
+        return False
 
     builder = ProfileBuilder(crm, llm, question_id_filter=row.question_ids_to_include or None)
 
@@ -323,7 +329,7 @@ def _run_briefing(
 
     if not is_initial and not new_profiles:
         logger.info("silent: no new attendees for %s", row.slug)
-        return
+        return True
 
     event_meta = eb.fetch_event(row.eventbrite_event_id)
     when = _format_event_when(event_meta.start_local, event_meta.timezone)
@@ -352,7 +358,7 @@ def _run_briefing(
 
     if dry_run:
         logger.info("dry-run: would send %r to %s", subject, row.speaker_emails)
-        return
+        return True
 
     result = sender.send(
         to=row.speaker_emails,
@@ -388,7 +394,7 @@ def _run_briefing(
             _retry_state_write(airtable.reconcile_after_initial_send, row, sent_at=now)
         else:
             _retry_state_write(airtable.reconcile_after_send, row, sent_at=now)
-        return
+        return True
 
     # A genuine send (this tick's email reflects this tick's fetch) advances
     # the cursor to the latest attendee so the next tick diffs against it.
@@ -404,6 +410,7 @@ def _run_briefing(
                 airtable.update_after_send,
                 row, sent_at=now, attendee_cursor=max_cursor, attendee_count=len(profiles),
             )
+        return True
     else:
         # Not sent, and not the duplicate-reconcile handled above. send_engine
         # only returns sent=False with reason="duplicate" today (real SMTP
@@ -413,6 +420,7 @@ def _run_briefing(
         msg = f"send returned sent=False reason={result.reason!r} for {row.slug}; no state written"
         logger.warning(msg)
         airtable.record_error(row, msg)
+        return False
 
 
 def main(dry_run: bool = False) -> int:
@@ -506,15 +514,19 @@ def _run_tick(dry_run: bool = False) -> int:
             assert row is not None
             try:
                 if should_send_initial(row, now):
-                    _run_briefing(
+                    ok = _run_briefing(
                         row, eb, crm, llm, renderer, sender, airtable, now,
                         is_initial=True, dry_run=dry_run, logo_url=cfg.logo_url,
                     )
+                    if not ok:
+                        failed_events.append(row.slug)
                 elif row.enabled and should_send_today(row, now):
-                    _run_briefing(
+                    ok = _run_briefing(
                         row, eb, crm, llm, renderer, sender, airtable, now,
                         is_initial=False, dry_run=dry_run, logo_url=cfg.logo_url,
                     )
+                    if not ok:
+                        failed_events.append(row.slug)
                 else:
                     logger.info("event %s skipped: %s", row.slug, _skip_reason(row, now))
             except Exception as e:

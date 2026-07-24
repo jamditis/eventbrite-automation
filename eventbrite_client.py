@@ -283,34 +283,62 @@ class EventbriteClient:
 
         logger.info("Creating draft event: %s", event.title)
 
-        response = self.session.post(
-            f"{self.base_url}/organizations/{self.organization_id}/events/",
-            headers=self.headers,
-            json=event_payload,
-            timeout=HTTP_TIMEOUT,
-        )
-
-        if response.status_code != 200:
-            logger.error(
-                "Eventbrite create-event API error %s: %s",
-                response.status_code, response.text,
+        try:
+            response = self.session.post(
+                f"{self.base_url}/organizations/{self.organization_id}/events/",
+                headers=self.headers,
+                json=event_payload,
+                timeout=HTTP_TIMEOUT,
             )
-            response.raise_for_status()
+        except (requests.Timeout, requests.ConnectionError) as e:
+            # Ambiguous outcome: the POST may have succeeded server-side before
+            # the connection died. Reconcile by looking for a draft with this
+            # exact title — if one exists, adopt it instead of failing (a
+            # failure here would leave Airtable without the event ID, and a
+            # retry would create a duplicate draft).
+            logger.warning(
+                "Create-event request failed ambiguously (%s); "
+                "checking for an existing draft to adopt", e,
+            )
+            adopted = self.find_draft_by_title(event.title)
+            if adopted is None:
+                raise
+            event_id, event_url = adopted
+            logger.warning("Adopted existing draft %s after ambiguous create", event_id)
+            warnings.append(
+                "Create request timed out but the draft already existed and was "
+                "adopted — double-check the listing in Eventbrite"
+            )
+        else:
+            if response.status_code != 200:
+                logger.error(
+                    "Eventbrite create-event API error %s: %s",
+                    response.status_code, response.text,
+                )
+                response.raise_for_status()
 
-        data = response.json()
-
-        event_id = data["id"]
-        event_url = data["url"]
+            data = response.json()
+            event_id = data["id"]
+            event_url = data["url"]
 
         logger.info("Draft event created: %s", event_url)
 
-        # Add description
-        if not self._add_description(event_id, event):
-            warnings.append("Could not add Overview description — add it manually in Eventbrite")
+        # Enrichment below is best-effort: the draft already exists, so a
+        # transport error here must degrade to a warning — raising would lose
+        # the event ID and set up a duplicate draft on retry.
+        try:
+            if not self._add_description(event_id, event):
+                warnings.append("Could not add Overview description — add it manually in Eventbrite")
+        except Exception as e:
+            logger.exception("Adding Overview description failed for event %s", event_id)
+            warnings.append(f"Could not add Overview description ({e}) — add it manually in Eventbrite")
 
-        # Create ticket class
-        if not self._create_ticket_class(event_id, event.is_free):
-            warnings.append("Could not create ticket class — add one manually in Eventbrite")
+        try:
+            if not self._create_ticket_class(event_id, event.is_free):
+                warnings.append("Could not create ticket class — add one manually in Eventbrite")
+        except Exception as e:
+            logger.exception("Creating ticket class failed for event %s", event_id)
+            warnings.append(f"Could not create ticket class ({e}) — add one manually in Eventbrite")
 
         # Note for virtual events: Zoom link must be added manually
         if event.is_virtual:
@@ -326,6 +354,30 @@ class EventbriteClient:
             status="draft",
             warnings=warnings,
         )
+
+    def find_draft_by_title(self, title: str) -> tuple | None:
+        """Find the most recent draft event whose name exactly matches `title`.
+
+        Used to reconcile an ambiguous create (timeout/connection drop after
+        the POST): if Eventbrite already created the draft, we adopt it rather
+        than failing and duplicating it on retry. Returns (event_id, url) or
+        None. Errors return None — reconciliation is best-effort and the
+        caller re-raises the original failure.
+        """
+        try:
+            response = self.session.get(
+                f"{self.base_url}/organizations/{self.organization_id}/events/",
+                headers=self.headers,
+                params={"status": "draft", "name_filter": title, "order_by": "created_desc"},
+                timeout=HTTP_TIMEOUT,
+            )
+            response.raise_for_status()
+            for candidate in response.json().get("events", []):
+                if (candidate.get("name") or {}).get("text") == title:
+                    return candidate["id"], candidate.get("url", "")
+        except Exception:
+            logger.exception("Draft reconciliation lookup failed for %r", title)
+        return None
 
     def _add_description(self, event_id: str, event: EventRecord) -> bool:
         """Add structured content for the Overview section.

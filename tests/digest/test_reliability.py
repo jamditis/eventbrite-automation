@@ -18,7 +18,6 @@ import pytest
 import digest.alert_failure as alert_failure
 import digest.cron as cron
 import digest.send_engine as send_engine
-from digest.config import Config
 
 # --- main() exit codes ------------------------------------------------------
 
@@ -116,31 +115,20 @@ def test_smtp_connection_has_timeout(monkeypatch):
 
 # --- failure alert ----------------------------------------------------------
 
-def _config(**overrides):
-    values = dict(
-        eventbrite_token="t",
-        airtable_pat="p",
-        airtable_base_id="b",
-        airtable_table_name="Events",
-        dashboard_api_base="http://localhost",
-        dashboard_api_key="k",
-        smtp_host="smtp.test",
-        smtp_port=465,
-        smtp_user="u",
-        smtp_password="pw",
-        smtp_from_name="CCM",
-        smtp_from_email="from@test",
-        logo_url="",
-        bcc_always=("staff1@test", "staff2@test"),
-        cc_always=(),
-        gemini_bin="gemini",
-        codex_bin="codex",
-        codex_model="m",
-        telegram_bot_token="",
-        telegram_chat_id="",
-    )
-    values.update(overrides)
-    return Config(**values)
+def _alert_env(monkeypatch):
+    """Minimal env the alert needs. Deliberately does NOT set the Eventbrite/
+    Airtable/dashboard vars — the alert must work without them, since a
+    missing credential is exactly the failure it reports."""
+    monkeypatch.setenv("SMTP_HOST", "smtp.test")
+    monkeypatch.setenv("SMTP_PORT", "465")
+    monkeypatch.setenv("SMTP_USER", "u")
+    monkeypatch.setenv("SMTP_PASSWORD", "pw")
+    monkeypatch.setenv("SMTP_FROM_NAME", "CCM")
+    monkeypatch.setenv("SMTP_FROM_EMAIL", "from@test")
+    monkeypatch.setenv("BCC_ALWAYS", "staff1@test,staff2@test")
+    monkeypatch.delenv("ALERT_RECIPIENTS", raising=False)
+    for var in ("EVENTBRITE_PRIVATE_TOKEN", "AIRTABLE_PAT", "AIRTABLE_BASE_ID", "DASHBOARD_API_KEY"):
+        monkeypatch.delenv(var, raising=False)
 
 
 def test_failure_alert_sends_to_standing_recipients(monkeypatch):
@@ -162,10 +150,9 @@ def test_failure_alert_sends_to_standing_recipients(monkeypatch):
         def send_message(self, msg):
             sent["msg"] = msg
 
-    monkeypatch.setattr(alert_failure, "load_config", _config)
+    _alert_env(monkeypatch)
     monkeypatch.setattr(alert_failure.smtplib, "SMTP_SSL", _CapturingSMTP)
     monkeypatch.setattr(alert_failure, "_recent_journal", lambda **kw: "journal tail")
-    monkeypatch.delenv("ALERT_RECIPIENTS", raising=False)
 
     assert alert_failure.send_failure_alert() == 0
     msg = sent["msg"]
@@ -194,10 +181,37 @@ def test_failure_alert_honors_recipient_override(monkeypatch):
         def send_message(self, msg):
             sent["msg"] = msg
 
-    monkeypatch.setattr(alert_failure, "load_config", _config)
+    _alert_env(monkeypatch)
     monkeypatch.setattr(alert_failure.smtplib, "SMTP_SSL", _CapturingSMTP)
     monkeypatch.setattr(alert_failure, "_recent_journal", lambda **kw: "")
     monkeypatch.setenv("ALERT_RECIPIENTS", "oncall@test")
 
     assert alert_failure.send_failure_alert() == 0
     assert sent["msg"]["To"] == "oncall@test"
+
+
+def test_failure_alert_fails_cleanly_without_smtp_creds(monkeypatch):
+    _alert_env(monkeypatch)
+    monkeypatch.delenv("SMTP_USER", raising=False)
+    monkeypatch.delenv("SMTP_PASSWORD", raising=False)
+    assert alert_failure.send_failure_alert() == 1
+
+
+# --- recipient-validation failures fail the tick ----------------------------
+
+def test_briefing_missing_recipients_returns_failure():
+    """A row with no speaker emails is a per-event failure — it must count
+    toward the tick's failed events so the OnFailure alert fires."""
+    row = MagicMock()
+    row.record_id = "recX"
+    row.slug = "evt"
+    row.speaker_emails = []
+    row.lead_host_email = "host@test"
+    airtable = MagicMock()
+
+    ok = cron._run_briefing(
+        row, MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(),
+        airtable, None, is_initial=True, dry_run=False,
+    )
+    assert ok is False
+    airtable.record_error.assert_called_once()

@@ -310,7 +310,7 @@ since status is in-memory).
 - Failures set Status to "Needs review" + a `Logs` entry; Gemini fallback-banner substitutions are also logged to the record.
 - Background work runs on a bounded 4-thread pool; the status map is capped at 200 entries.
 - Optional webhook auth: set `WEBHOOK_REQUIRE_AUTH=true` + a secret to require `X-Webhook-Secret` header or `{"secret": ...}` body field (update the Airtable script first — see `docs/operations/webhook-runbook.md`).
-- Tests: `python -m pytest tests/` covers both subsystems (214 tests as of 2026-07-24); CI lints the whole repo with ruff.
+- Tests: `python -m pytest tests/` covers both subsystems (222 tests as of 2026-07-24); CI lints the whole repo with ruff.
 
 ### Eventbrite organizer profile
 

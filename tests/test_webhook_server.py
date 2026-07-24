@@ -27,15 +27,16 @@ def client():
 
 @pytest.fixture(autouse=True)
 def clean_state():
-    with webhook_server._status_lock:
-        webhook_server.processing_status.clear()
-    with webhook_server._in_flight_lock:
-        webhook_server._in_flight.clear()
+    def _clear():
+        with webhook_server._status_lock:
+            webhook_server.processing_status.clear()
+        with webhook_server._in_flight_lock:
+            webhook_server._in_flight.clear()
+        webhook_server._created_events.clear()
+
+    _clear()
     yield
-    with webhook_server._status_lock:
-        webhook_server.processing_status.clear()
-    with webhook_server._in_flight_lock:
-        webhook_server._in_flight.clear()
+    _clear()
 
 
 class FakeAirtable:
@@ -169,6 +170,17 @@ def test_duplicate_fire_while_processing_is_not_resubmitted(client, monkeypatch)
     assert len(submitted) == 1
 
 
+def test_airtable_fire_during_regeneration_is_rejected(client, monkeypatch):
+    """A regular processing fire must not clobber an in-flight regeneration."""
+    submitted = []
+    monkeypatch.setattr(webhook_server._executor, "submit", lambda fn, *a: submitted.append(a))
+    webhook_server._set_status("rec1234567890", {"status": "regenerating"})
+    resp = client.post("/webhook/airtable", json={"record_id": "rec1234567890"})
+    assert resp.status_code == 202
+    assert resp.get_json()["status"] == "already_processing"
+    assert submitted == []
+
+
 def test_in_flight_claim_blocks_concurrent_processing(monkeypatch):
     assert webhook_server._try_claim("rec1234567890")
     result = webhook_server.process_record("rec1234567890")
@@ -262,6 +274,59 @@ def test_fallback_image_is_flagged_in_airtable_log(monkeypatch, tmp_path):
     result = webhook_server.process_record("rec1234567890")
     assert result["success"] is True
     assert any("AI image generation failed" in msg for _, msg in airtable.log_entries)
+
+
+def test_airtable_persistence_failure_reports_failure(monkeypatch, tmp_path):
+    """Draft created but the Airtable status write failed: the result must be
+    a failure (retryable), and the in-process cache must let the retry repair
+    the record instead of creating a second draft."""
+    webhook_server._created_events.clear()
+    airtable = FakeAirtable(record=_record())
+    airtable.mark_result = False
+    _wire_pipeline(monkeypatch, airtable, tmp_path)
+
+    result = webhook_server.process_record("rec1234567890")
+
+    assert result["success"] is False
+    assert result["error"] == "airtable_update_failed"
+    assert result["eventbrite_event_id"] == "999"
+    # the draft is remembered in-process for the duplicate guard
+    assert webhook_server._created_events["rec1234567890"] == (
+        "999", "https://eventbrite.com/e/999"
+    )
+
+    # Retry with Airtable recovered: repair path, no second create
+    airtable2 = FakeAirtable(record=_record())  # Airtable still has no event ID
+
+    def exploding_create(event, logo_id=None):
+        raise AssertionError("create_draft_event must not be called on retry")
+
+    _wire_pipeline(monkeypatch, airtable2, tmp_path)
+    result2 = webhook_server.process_record("rec1234567890")
+    assert result2["success"] is True
+    assert "repaired" in result2["message"]
+    assert airtable2.marked == [("rec1234567890", "https://eventbrite.com/e/999", "999")]
+    webhook_server._created_events.clear()
+
+
+def test_archive_failure_does_not_downgrade_success(monkeypatch, tmp_path):
+    """Once Airtable reflects the draft, a failing best-effort archive step
+    (logo fetch) must not flip the record to a failed state."""
+    airtable = FakeAirtable(record=_record())
+    _wire_pipeline(monkeypatch, airtable, tmp_path)
+
+    def exploding_logo_fetch(event_id):
+        raise requests.ConnectionError("logo fetch down")
+
+    import requests
+    fake_eb = webhook_server.EventbriteClient()
+    # rewire just the logo fetch on the already-faked client
+    monkeypatch.setattr(fake_eb, "get_event_logo_url", exploding_logo_fetch, raising=False)
+    monkeypatch.setattr(webhook_server, "EventbriteClient", lambda: fake_eb)
+
+    result = webhook_server.process_record("rec1234567890")
+    assert result["success"] is True
+    assert airtable.status_updates == []  # never set to ERROR_STATUS
 
 
 # --- Status map bounds ------------------------------------------------------

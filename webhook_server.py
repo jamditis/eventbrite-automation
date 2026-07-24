@@ -62,6 +62,12 @@ MAX_STATUS_ENTRIES = 200
 _in_flight = set()
 _in_flight_lock = threading.Lock()
 
+# Last-resort duplicate guard: record_id -> (event_id, url) for drafts created
+# in this process. If ALL Airtable writes fail after a create (outage), the
+# Airtable-side guard can't work on retry — this cache still can, for the
+# lifetime of the process.
+_created_events: dict = {}
+
 # Bounded pool for background processing — an unbounded thread-per-request
 # model lets a request flood exhaust the Pi's memory.
 _executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="pipeline")
@@ -188,23 +194,30 @@ def _process_record_locked(record_id: str) -> dict:
 
         # Duplicate-draft guard: if a previous run created the Eventbrite event
         # but failed before updating Status, don't create a second draft —
-        # repair the Airtable state instead.
-        if event.eventbrite_event_id:
+        # repair the Airtable state instead. The in-process cache covers the
+        # case where the previous run couldn't write the event ID to Airtable
+        # at all.
+        known_event_id = event.eventbrite_event_id
+        known_url = event.eventbrite_url
+        if not known_event_id and record_id in _created_events:
+            known_event_id, known_url = _created_events[record_id]
+        if known_event_id:
             logger.warning(
                 "Record %s already has Eventbrite event %s but status %r; "
                 "repairing status instead of creating a duplicate draft",
-                record_id, event.eventbrite_event_id, event.status,
+                record_id, known_event_id, event.status,
             )
-            airtable.mark_as_processed(record_id, event.eventbrite_url or "", event.eventbrite_event_id)
+            repaired = airtable.mark_as_processed(record_id, known_url or "", known_event_id)
             airtable.update_log(
                 record_id,
-                f"Skipped duplicate draft creation — event {event.eventbrite_event_id} already exists; status repaired",
+                f"Skipped duplicate draft creation — event {known_event_id} already exists; status repaired",
             )
             return {
-                "success": True,
-                "message": "Draft already exists; status repaired",
+                "success": repaired,
+                "message": "Draft already exists; status repaired" if repaired
+                else "Draft already exists but Airtable update failed again",
                 "record_id": record_id,
-                "eventbrite_url": event.eventbrite_url,
+                "eventbrite_url": known_url,
             }
 
         # Validate data
@@ -224,41 +237,63 @@ def _process_record_locked(record_id: str) -> dict:
         # Create draft event
         logger.info("Creating draft event...")
         eb_event = eventbrite.create_draft_event(event, logo_id=logo_id)
+        # Remember the draft in-process immediately — if every Airtable write
+        # below fails, this is what stops a retry from duplicating it.
+        _created_events[record_id] = (eb_event.event_id, eb_event.url)
 
-        # Update Airtable with event ID for future updates. If this write
-        # fails, the draft exists but Airtable doesn't know — log loudly, and
-        # the duplicate-draft guard above prevents a re-run from creating a
-        # second draft once the event ID write eventually lands.
+        # Persist to Airtable. The event ID is the critical field (it powers
+        # the duplicate-draft guard), so write it first as its own small
+        # update, then the full status+URL update.
+        id_stored = airtable.update_event_id(record_id, eb_event.event_id)
         marked = airtable.mark_as_processed(event.record_id, eb_event.url, eb_event.event_id)
         if not marked:
             logger.critical(
-                "Draft %s created (%s) but Airtable status update FAILED for %s — "
-                "fix manually or re-trigger once Airtable recovers",
-                eb_event.event_id, eb_event.url, record_id,
+                "Draft %s created (%s) but Airtable status update FAILED for %s "
+                "(event ID stored separately: %s) — re-trigger once Airtable "
+                "recovers; the duplicate guard will repair the record",
+                eb_event.event_id, eb_event.url, record_id, id_stored,
             )
             airtable.update_log(
                 record_id,
-                f"WARNING: draft created ({eb_event.url}) but status update failed — set Status manually",
+                f"ERROR: draft created ({eb_event.url}) but the Airtable status "
+                "update failed — re-trigger this record to repair it",
             )
+            # The draft exists but the record doesn't reflect it: report
+            # failure so the async status and sync callers see it, and a
+            # re-trigger runs the repair path above.
+            return {
+                "success": False,
+                "error": "airtable_update_failed",
+                "record_id": record_id,
+                "eventbrite_url": eb_event.url,
+                "eventbrite_event_id": eb_event.event_id,
+            }
 
-        # Surface non-fatal issues to staff in the record's Logs field
-        if generated.used_fallback:
-            airtable.update_log(
-                record_id,
-                f"AI image generation failed ({generated.error}); used default CCM banner. "
-                "Set status to 'Regenerate image' to retry.",
+        # Everything below is best-effort archival/logging: the draft exists
+        # and Airtable reflects it, so a failure here must never downgrade the
+        # record to a failed state.
+        try:
+            if generated.used_fallback:
+                airtable.update_log(
+                    record_id,
+                    f"AI image generation failed ({generated.error}); used default CCM banner. "
+                    "Set status to 'Regenerate image' to retry.",
+                )
+            for warning in eb_event.warnings:
+                airtable.update_log(record_id, f"Warning: {warning}")
+
+            # Save image to Airtable attachment field for archive
+            logo_url = eventbrite.get_event_logo_url(eb_event.event_id)
+            if logo_url:
+                timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                filename = f"{event.title[:30]}_{timestamp}.png"
+                airtable.add_image_attachment(event.record_id, logo_url, filename)
+            else:
+                logger.info("Could not fetch logo URL for attachment archive")
+        except Exception:
+            logger.exception(
+                "Post-persistence archival step failed for %s (record is fine)", record_id
             )
-        for warning in eb_event.warnings:
-            airtable.update_log(record_id, f"Warning: {warning}")
-
-        # Save image to Airtable attachment field for archive
-        logo_url = eventbrite.get_event_logo_url(eb_event.event_id)
-        if logo_url:
-            timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-            filename = f"{event.title[:30]}_{timestamp}.png"
-            airtable.add_image_attachment(event.record_id, logo_url, filename)
-        else:
-            logger.info("Could not fetch logo URL for attachment archive")
 
         logger.info("Successfully processed %s: %s", record_id, eb_event.url)
         return {
@@ -267,7 +302,6 @@ def _process_record_locked(record_id: str) -> dict:
             "event_title": event.title,
             "eventbrite_url": eb_event.url,
             "is_virtual": event.is_virtual,
-            "airtable_updated": marked,
             "warnings": eb_event.warnings,
         }
 
@@ -394,10 +428,12 @@ def airtable_webhook():
                     return jsonify(result), 500
             else:
                 # Async processing (default for Airtable webhooks).
-                # Reject duplicate fires for a record that's already in flight.
+                # Reject duplicate fires for a record that's already in flight
+                # on either path — a regenerate in progress must not be
+                # clobbered by a regular processing fire.
                 with _status_lock:
                     current = processing_status.get(record_id, {})
-                if current.get("status") == "processing":
+                if current.get("status") in ("processing", "regenerating"):
                     return jsonify({
                         "status": "already_processing",
                         "record_id": record_id,
