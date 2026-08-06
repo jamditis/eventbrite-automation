@@ -25,7 +25,7 @@ Cloudflare Access can only enforce on traffic that traverses Cloudflare's proxy.
 | CF Pages project | `ccm-pages`, serving `ccm-pages.pages.dev` (HTTP 200) | `curl -I https://ccm-pages.pages.dev/` |
 | CF preview freshness | stale — built 2026-03-03 per the recon; serves an old snapshot | issue #10 comment, 2026-05-22 |
 | Source repo | `github.com/jamditis/ccm`, CNAME `pages.centerforcooperativemedia.org` | repo `CNAME` file |
-| Submodules | `cjs2026`, `njcic`, `cjs-beat-street`, `tools` | `.gitmodules` |
+| Submodules | `cjs2026`, `njcic`, `tools` | `.gitmodules` |
 | GH Pages deploy | `.github/workflows/pages.yml` — push to `main` + `workflow_dispatch`, `submodules: false` | workflow file |
 | Daily events cron | `.github/workflows/update-events.yml` — `cron: 0 6 * * *`, auto-commits `index.html` to `main` | workflow file |
 | Last events auto-commit | 2026-05-08 (`b3ea1a2`) | `git log origin/main` |
@@ -52,7 +52,7 @@ Resolve this before doing any 0b/0c work — a cutover into the wrong account st
 These were not in the original spec or the 2026-05-22 recon and they reshape the acceptance gates.
 
 1. **The spec's "live paths" list is not a clean parity target.** 8 of the 18 paths the spec lists as "existing live paths to verify" return 404 on prod right now (measured 2026-06-04). They break into three causes, so "all listed paths return 200" is unachievable by construction and must not be the gate:
-   - **Submodule roots are dark on GitHub Pages.** `/njcic/`, `/cjs2026/`, and `/cjs-beat-street/` 404 on prod because `pages.yml` checks out with `submodules: false`, yet each carries an `index.html` in its submodule (verified). `deploy.sh` inits submodules, so Cloudflare *restores* these — `ccm-pages.pages.dev/njcic/` already returns 200. The migration is a net gain here, not just parity. `/tools/` is a skipped submodule too, but it has no `index.html`, so it stays 404 either way — deploying the submodule does not give it a landing page.
+   - **Submodule roots are dark on GitHub Pages.** `/njcic/` and `/cjs2026/` 404 on prod because `pages.yml` checks out with `submodules: false`, yet each carries an `index.html` in its submodule (verified). `deploy.sh` inits submodules, so Cloudflare *restores* these — `ccm-pages.pages.dev/njcic/` already returns 200. The migration is a net gain here, not just parity. `/tools/` is a skipped submodule too, but it has no `index.html`, so it stays 404 either way — deploying the submodule does not give it a landing page.
    - **Directories with no index document.** `/fellowships/`, `/programs/`, `/internal-tools/`, and `/reports/` have no `index.html` (and in three cases no HTML at all), so they 404 on both origins. They were never live landing pages; drop them from the gate.
    - **Directories whose live page is a named file.** `/demoday/` and `/weekender/` 404 as directory roots but their named files serve (`/demoday/demoday-insights-2025.html` → 200, `/weekender/weekender-2025-template.html` → 200). The real live path is the file, not the directory.
 
@@ -85,7 +85,6 @@ Capture this as the cutover regression target: the gate is **no path that is 200
 | `/njcic/` | 404 | submodule — **200** on CF if cleared for public release (open question #3); stays 404 if Joe keeps it dark |
 | `/tools/` | 404 | submodule, no index — stays 404 unless an index is added |
 | `/cjs2026/` | 404 | submodule — **200** on CF if cleared for public release (open question #3); stays 404 if Joe keeps it dark |
-| `/cjs-beat-street/` | 404 | submodule — **200** on CF if cleared for public release (open question #3); stays 404 if Joe keeps it dark |
 | `/fellowships/`, `/programs/`, `/internal-tools/`, `/reports/` | 404 | no index document — not live paths; drop from gate |
 
 Re-run this sweep against the fresh preview in 0a and against prod in 0c.
@@ -98,7 +97,7 @@ Re-run this sweep against the fresh preview in 0a and against prod in 0c.
 - [ ] Clean and scope the `ccm` working tree first — it carries submodule-pointer drift plus untracked dirs (e.g. `social-scraper/` round-2 artifacts, `docs/`, `prompts/`). The migration touches only deploy config; do not sweep unrelated content into it.
 - [ ] Redeploy `ccm-pages` from current `main` (`bash deploy.sh`, or the CI build settings with `git submodule update --init --recursive`).
 - [ ] Confirm the events cron is firing and succeeding — `gh run list --workflow=update-events.yml -R jamditis/ccm --limit 10` should show recent `schedule`-triggered runs with `success` conclusions, not just an absence of commits (see finding 5; commit history cannot prove the cron is alive).
-- [ ] Re-run the baseline sweep against `ccm-pages.pages.dev`. **Acceptance:** every path that is 200 on prod today returns **200, or — for the `.html` paths, if clean URLs are accepted (open question #2) — a 308 to a 200 destination** on the preview; submodule roots (`/njcic/`, `/cjs2026/`, `/cjs-beat-street/`) are 200 **only for the sections Joe clears for public release (open question #3)** and may stay 404 otherwise; decide and record the `.html` clean-URL behavior (accept the 308s or suppress them).
+- [ ] Re-run the baseline sweep against `ccm-pages.pages.dev`. **Acceptance:** every path that is 200 on prod today returns **200, or — for the `.html` paths, if clean URLs are accepted (open question #2) — a 308 to a 200 destination** on the preview; submodule roots (`/njcic/`, `/cjs2026/`) are 200 **only for the sections Joe clears for public release (open question #3)** and may stay 404 otherwise; decide and record the `.html` clean-URL behavior (accept the 308s or suppress them).
 
 ### Phase 0b — deploy automation and DNS cutover
 
@@ -120,4 +119,4 @@ Flip the `pages.*` CNAME back to `jamditis.github.io` (DNS-only). The GitHub Pag
 
 1. **Account ownership (blocking).** Which Cloudflare account owns `centerforcooperativemedia.org`, and can Joe admin it? Picks Scenario A/B/C.
 2. **Clean URLs.** Accept Cloudflare's `.html` → extensionless 308 redirects (and audit `og:url`/canonical tags across the site), or suppress them to keep `.html` paths canonical?
-3. **Submodule paths.** `/njcic/`, `/cjs2026/`, and `/cjs-beat-street/` are dark on GitHub Pages today and would come back live after the migration — confirm those sections should be public before cutover restores them.
+3. **Submodule paths.** `/njcic/` and `/cjs2026/` are dark on GitHub Pages today and would come back live after the migration — confirm those sections should be public before cutover restores them.
