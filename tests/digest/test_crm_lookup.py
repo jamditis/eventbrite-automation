@@ -133,3 +133,16 @@ def test_lookup_short_circuits_on_empty_email(mock_get):
     crm = CrmLookup(api_base="http://x/api", api_key="k")
     assert crm.find_by_email("") is None
     assert mock_get["calls"] == []
+
+
+@pytest.mark.parametrize("api_key", ["", "   "])
+def test_blank_key_warns_once_and_disables_all_http(mock_get, caplog, api_key):
+    crm = CrmLookup(api_base="http://x/api", api_key=api_key)
+
+    assert crm.find_by_email("first@example.com") is None
+    assert crm.find_by_email("second@example.com") is None
+    assert mock_get["calls"] == []
+    warnings = [
+        record for record in caplog.records if "CRM enrichment disabled" in record.getMessage()
+    ]
+    assert len(warnings) == 1

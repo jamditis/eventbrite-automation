@@ -108,6 +108,14 @@ sudo systemctl restart digest-cron.timer
 journalctl -u digest-cron.service -f   # confirm next tick
 ```
 
+`DASHBOARD_API_KEY` is optional so non-production installs can run without the
+CRM. A blank value logs one warning when the cron creates its CRM client, skips
+all CRM HTTP requests, and still includes each attendee's registration form Q&A
+in the briefing. The houseofjawn production service is expected to keep the key
+configured so briefings include available CRM context. To restore enrichment,
+set the existing key in `.env.digest`, restart the timer, and confirm that the
+disabled warning is absent on the next tick.
+
 ## Common failures + fixes
 
 ### `ConfigError: missing required env vars`

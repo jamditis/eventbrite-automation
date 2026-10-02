@@ -2,7 +2,9 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from digest.crm_lookup import CrmContact
+from digest.config import REQUIRED, load_config
+from digest.crm_lookup import CrmContact, CrmLookup
+from digest.email_renderer import EmailRenderer, RenderContext
 from digest.eventbrite_client import EventbriteAttendee
 from digest.profile_builder import AttendeeProfile, ProfileBuilder
 
@@ -88,6 +90,43 @@ def test_unknown_attendee_uses_form_only_blurb_no_llm(mock_crm, mock_llm):
     assert profile.is_known_ccm_contact is False
     assert profile.crm_contact_id is None
     assert "Sarah Smith" in profile.blurb
+    mock_llm.run_blurb.assert_not_called()
+
+
+def test_disabled_crm_builds_and_renders_form_only_briefing(env, mock_llm):
+    def unexpected_http(*args, **kwargs):
+        raise AssertionError("disabled CRM must not make an HTTP request")
+
+    for key in REQUIRED:
+        env.setenv(key, "test-value")
+    cfg = load_config()
+    env.setattr("digest.crm_lookup.requests.get", unexpected_http)
+    profile = ProfileBuilder(
+        crm=CrmLookup(api_base=cfg.dashboard_api_base, api_key=cfg.dashboard_api_key),
+        llm=mock_llm,
+    ).build(_attendee())
+
+    assert profile is not None
+    ctx = RenderContext(
+        event_title="Test event",
+        event_when="May 15, 2026",
+        event_location="",
+        total_count=1,
+        new_attendees=[profile],
+        existing_attendees=[],
+        subject="Test event attendee briefing",
+        logo_url=None,
+        is_initial=True,
+    )
+    renderer = EmailRenderer()
+    html = renderer.render(ctx)
+    plain_text = renderer.render_plain_text(ctx)
+
+    for output in (html, plain_text):
+        assert "Sarah Smith" in output
+        assert "What do you hope to learn?" in output
+        assert "AI workflows" in output
+    assert profile.is_known_ccm_contact is False
     mock_llm.run_blurb.assert_not_called()
 
 

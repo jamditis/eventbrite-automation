@@ -2,9 +2,9 @@ import pytest
 
 from digest.config import ConfigError, load_config
 
-# All env vars in config.REQUIRED. Centralized here so adding a required var
-# is a one-line change in both the source tuple and this fixture, not a
-# scavenger hunt across every success-path test.
+# All env vars in config.REQUIRED, plus the optional production CRM key.
+# Centralized here so adding a required var is a one-line change in both the
+# source tuple and this fixture, not a scavenger hunt across success-path tests.
 _REQUIRED_ENV = {
     "EVENTBRITE_PRIVATE_TOKEN": "tok123",
     "AIRTABLE_PAT": "pat123",
@@ -27,9 +27,20 @@ def test_load_config_reads_env(env):
     assert cfg.eventbrite_token == "tok123"
     assert cfg.airtable_pat == "pat123"
     assert cfg.airtable_base_id == "appABC"
+    assert cfg.dashboard_api_key == "dash123"
     assert cfg.smtp_password == "smtp123"
     assert cfg.smtp_user == "sender@ccm.example"
     assert cfg.smtp_from_email == "digest@ccm.example"
+
+
+@pytest.mark.parametrize("dashboard_key", [None, "", "   "])
+def test_load_config_allows_missing_dashboard_key(env, dashboard_key):
+    _set_required(env)
+    if dashboard_key is None:
+        env.delenv("DASHBOARD_API_KEY")
+    else:
+        env.setenv("DASHBOARD_API_KEY", dashboard_key)
+    assert load_config().dashboard_api_key == ""
 
 
 def test_load_config_raises_on_missing_required(env):
