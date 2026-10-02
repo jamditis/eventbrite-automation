@@ -54,9 +54,15 @@ class CrmLookup:
         self._base = api_base.rstrip("/")
         self._key = api_key
         self._timeout = timeout
+        self._enabled = bool(api_key.strip())
+        if not self._enabled:
+            logger.warning(
+                "CRM enrichment disabled: DASHBOARD_API_KEY is blank; "
+                "attendee briefings will use form answers without CRM context"
+            )
 
     def find_by_email(self, email: str) -> CrmContact | None:
-        if not email:
+        if not self._enabled or not email:
             return None
         email_lower = email.lower()
         try:

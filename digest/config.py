@@ -52,7 +52,6 @@ REQUIRED = (
     "EVENTBRITE_PRIVATE_TOKEN",
     "AIRTABLE_PAT",
     "AIRTABLE_BASE_ID",
-    "DASHBOARD_API_KEY",
     "SMTP_PASSWORD",
     # SMTP_USER is the auth identity; SMTP_FROM_EMAIL is the From header and
     # the List-Unsubscribe mailto target. Both must be real — a placeholder
@@ -87,6 +86,10 @@ def load_config() -> Config:
     except ValueError as e:
         raise ConfigError(f"SMTP_PORT must be an integer; got {smtp_port_raw!r}") from e
 
+    dashboard_api_key = os.environ.get("DASHBOARD_API_KEY", "")
+    if not dashboard_api_key.strip():
+        dashboard_api_key = ""
+
     return Config(
         eventbrite_token=os.environ["EVENTBRITE_PRIVATE_TOKEN"],
         airtable_pat=os.environ["AIRTABLE_PAT"],
@@ -95,7 +98,7 @@ def load_config() -> Config:
         dashboard_api_base=os.environ.get(
             "DASHBOARD_API_BASE", "http://localhost:8081/api"
         ),
-        dashboard_api_key=os.environ["DASHBOARD_API_KEY"],
+        dashboard_api_key=dashboard_api_key,
         smtp_host=os.environ.get("SMTP_HOST", "smtp.gmail.com"),
         smtp_port=smtp_port,
         smtp_user=os.environ["SMTP_USER"],
